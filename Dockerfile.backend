@@ -1,12 +1,12 @@
 # Backend Dockerfile (multi-stage)
-FROM node:20-alpine AS base
+FROM docker.pumpking.life/node:18-alpine AS base
 WORKDIR /app
 COPY backend/package*.json backend/tsconfig.json ./
 RUN npm install --production=false
 COPY backend/src ./src
 RUN npm run build
 
-FROM node:20-alpine AS runtime
+FROM docker.pumpking.life/node:18-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=base /app/dist ./dist

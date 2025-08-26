@@ -1,5 +1,5 @@
 # Frontend Dockerfile (multi-stage build for static assets)
-FROM node:20-alpine AS build
+FROM docker.pumpking.life/node:18-alpine AS build
 WORKDIR /app
 COPY frontend/package*.json frontend/tsconfig.json frontend/vite.config.ts ./
 RUN npm install
@@ -9,7 +9,7 @@ COPY frontend/index.html ./
 RUN npm run build
 
 # Nginx stage
-FROM nginx:1.27-alpine AS runtime
+FROM docker.pumpking.life/nginx:alpine AS runtime
 COPY --from=build /app/dist /usr/share/nginx/html
 # Provide a basic healthcheck file (optional)
 HEALTHCHECK CMD wget -q -O /dev/null http://localhost:80/ || exit 1

@@ -5,6 +5,7 @@ import { DropZone } from "./components/DropZone";
 import { formatSize } from "./utils/format";
 import { preprocessImages } from "./utils/preprocess";
 import { OptimizedImageInfo } from "./types";
+import { CompareModal } from "./components/CompareModal";
 
 // In production behind nginx reverse proxy we default to same-origin (empty string) so requests hit /api/* proxied by nginx.
 const backendBase = import.meta.env.VITE_API_BASE || ""; // e.g. set VITE_API_BASE="http://localhost:4000" for local dev
@@ -27,9 +28,19 @@ const App: React.FC = () => {
     const [preFiles, setPreFiles] = useState<File[] | null>(null);
     const [loading, setLoading] = useState(false);
     const [summary, setSummary] = useState<{ totalOriginal: number; totalOptimized: number; savedBytes: number; ratio: number } | null>(null);
+    const [originalMap, setOriginalMap] = useState<Record<string, string>>({});
+    const [compareTarget, setCompareTarget] = useState<OptimizedImageInfo | null>(null);
 
     const addFiles = useCallback((fs: File[]) => {
         setFiles((prev: File[]) => [...prev, ...fs]);
+        // generate previews
+        fs.forEach((f) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                setOriginalMap((m) => (m[f.name] ? m : { ...m, [f.name]: reader.result as string }));
+            };
+            reader.readAsDataURL(f);
+        });
     }, []);
 
     const optimize = async () => {
@@ -79,6 +90,7 @@ const App: React.FC = () => {
     };
 
     return (
+        <>
         <div style={{ maxWidth: 960, margin: "0 auto", padding: 24 }}>
             <h1>在线图片压缩</h1>
             <DropZone onFiles={addFiles} />
@@ -188,9 +200,14 @@ const App: React.FC = () => {
                                 <p style={{ fontSize: 12, opacity: 0.8 }}>
                                     最佳: {img.format} 压缩率 {img.ratio}% 节省 {formatSize(img.savedBytes)}
                                 </p>
-                                <a href={img.base64} download={img.downloadName}>
-                                    下载最佳
-                                </a>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                    <a href={img.base64} download={img.downloadName}>
+                                        下载最佳
+                                    </a>
+                                    <button type="button" onClick={() => setCompareTarget(img)} style={{ cursor: "pointer" }}>
+                                        对比
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -217,6 +234,13 @@ const App: React.FC = () => {
                 </div>
             )}
         </div>
+    <CompareModal
+            open={!!compareTarget}
+            image={compareTarget}
+            originalUrl={compareTarget ? originalMap[compareTarget.originalName] : undefined}
+            onClose={() => setCompareTarget(null)}
+        />
+    </>
     );
 };
 

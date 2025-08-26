@@ -34,7 +34,9 @@ export function createCache(): { cache: UnifiedCache; kind: string } {
                 const payload = Buffer.concat([Buffer.from(JSON.stringify(meta) + "\n"), val.data]);
                 await redis.set(key, payload, "EX", 6 * 3600);
             },
-            size() { return undefined; }
+            size() {
+                return undefined;
+            }
         };
         return { cache, kind: "redis" };
     }

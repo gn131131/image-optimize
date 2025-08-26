@@ -35,14 +35,30 @@ app.use(limiter);
 // Metrics
 const registry = new Registry();
 collectDefaultMetrics({ register: registry });
-const hOptimize = new Histogram({ name: "optimize_duration_seconds", help: "Optimize duration seconds", registers: [registry] });
-const cOptimizeErrors = new Counter({ name: "optimize_errors_total", help: "Optimize errors", labelNames: ["type"], registers: [registry] });
+const hOptimize = new Histogram({
+    name: "optimize_duration_seconds",
+    help: "Optimize duration seconds",
+    registers: [registry]
+});
+const cOptimizeErrors = new Counter({
+    name: "optimize_errors_total",
+    help: "Optimize errors",
+    labelNames: ["type"],
+    registers: [registry]
+});
 const gCacheItems = new Gauge({ name: "opt_cache_items", help: "Cache item count", registers: [registry] });
 const cCacheHit = new Counter({ name: "opt_cache_hit_total", help: "Cache hit count", registers: [registry] });
 const cCacheMiss = new Counter({ name: "opt_cache_miss_total", help: "Cache miss count", registers: [registry] });
 
 // Cache (LRU or Redis)
-interface CacheValue { format: string; data: Buffer; w?: number; h?: number; quality: number; ts: number }
+interface CacheValue {
+    format: string;
+    data: Buffer;
+    w?: number;
+    h?: number;
+    quality: number;
+    ts: number;
+}
 const { cache, kind: cacheKind } = createCache();
 
 function sha256(buf: Buffer) {
@@ -107,10 +123,14 @@ app.post("/api/optimize", upload.array("files", 20), async (req: express.Request
             const out: R[] = [];
             const active: Promise<void>[] = [];
             let idx = 0;
-            const run = async (item: T, i: number) => { out[i] = await fn(item); };
+            const run = async (item: T, i: number) => {
+                out[i] = await fn(item);
+            };
             for (const it of items) {
                 const i = idx++;
-                const p = run(it, i).then(() => { active.splice(active.indexOf(p), 1); });
+                const p = run(it, i).then(() => {
+                    active.splice(active.indexOf(p), 1);
+                });
                 active.push(p);
                 if (active.length >= limit) await Promise.race(active);
             }
@@ -118,7 +138,7 @@ app.post("/api/optimize", upload.array("files", 20), async (req: express.Request
             return out;
         };
 
-    const processFile = async (file: Express.Multer.File) => {
+        const processFile = async (file: Express.Multer.File) => {
             const { buffer, originalname, mimetype, size } = file;
             const hash = sha256(buffer);
             try {
@@ -129,7 +149,9 @@ app.post("/api/optimize", upload.array("files", 20), async (req: express.Request
                     err.code = "pixel_limit";
                     throw err;
                 }
-            } catch (probeErr) { if (probeErr instanceof Error) throw probeErr; }
+            } catch (probeErr) {
+                if (probeErr instanceof Error) throw probeErr;
+            }
             const targetFormats: string[] = [];
             if (multi) {
                 targetFormats.push("webp", "avif");
@@ -146,14 +168,25 @@ app.post("/api/optimize", upload.array("files", 20), async (req: express.Request
             for (const fmt of uniqueFormats) {
                 const key = cacheKey(hash, fmt, quality, width, height);
                 const cached = await (cache as any).get(key);
-                if (cached) { cCacheHit.inc(); variants.push({ format: cached.format, data: cached.data }); continue; }
+                if (cached) {
+                    cCacheHit.inc();
+                    variants.push({ format: cached.format, data: cached.data });
+                    continue;
+                }
                 cCacheMiss.inc();
                 const optimized = await optimizeImageBuffer(buffer, { quality, width, height, format: fmt, mimetype });
                 if (!stripMeta) {
                     const sharpLib = (await import("sharp")).default;
                     optimized.data = await sharpLib(optimized.data).withMetadata().toBuffer();
                 }
-                await setCache(key, { format: optimized.format, data: optimized.data, quality, w: width, h: height, ts: Date.now() });
+                await setCache(key, {
+                    format: optimized.format,
+                    data: optimized.data,
+                    quality,
+                    w: width,
+                    h: height,
+                    ts: Date.now()
+                });
                 variants.push({ format: optimized.format, data: optimized.data });
             }
             variants.sort((a, b) => a.data.length - b.data.length);
@@ -167,17 +200,26 @@ app.post("/api/optimize", upload.array("files", 20), async (req: express.Request
                 buffer: best.data,
                 downloadName: `optimized-${Date.now()}.${best.format}`,
                 format: best.format,
-                variants: variants.map(v => ({ format: v.format, size: v.data.length, base64: `data:image/${v.format};base64,${v.data.toString("base64")}` }))
+                variants: variants.map((v) => ({
+                    format: v.format,
+                    size: v.data.length,
+                    base64: `data:image/${v.format};base64,${v.data.toString("base64")}`
+                }))
             };
-    };
+        };
 
         const results = await runLimited(files, MAX_CONCURRENCY, processFile);
         const totalOriginal = results.reduce((s, r) => s + r.originalSize, 0);
         const totalOptimized = results.reduce((s, r) => s + r.optimizedSize, 0);
         res.setHeader("Cache-Control", "no-store");
         res.json({
-            summary: { totalOriginal, totalOptimized, savedBytes: totalOriginal - totalOptimized, ratio: +(100 - (totalOptimized / Math.max(1, totalOriginal)) * 100).toFixed(2) },
-            images: results.map(r => ({
+            summary: {
+                totalOriginal,
+                totalOptimized,
+                savedBytes: totalOriginal - totalOptimized,
+                ratio: +(100 - (totalOptimized / Math.max(1, totalOriginal)) * 100).toFixed(2)
+            },
+            images: results.map((r) => ({
                 originalName: r.originalName,
                 originalSize: r.originalSize,
                 optimizedSize: r.optimizedSize,
@@ -209,14 +251,22 @@ app.post("/api/optimize/zip", upload.array("files", 20), async (req: express.Req
         res.setHeader("Content-Type", "application/zip");
         res.setHeader("Content-Disposition", "attachment; filename=optimized.zip");
         const archive = archiver("zip", { zlib: { level: 9 } });
-        archive.on("error", (err: Error) => { throw err; });
+        archive.on("error", (err: Error) => {
+            throw err;
+        });
         archive.pipe(res);
         for (const file of files) {
             if (multi) {
                 const base = file.originalname.replace(/\.[^.]+$/, "");
                 const fmts = ["webp", "avif", file.mimetype === "image/png" ? "png" : "jpeg"];
                 for (const f of [...new Set(fmts)]) {
-                    const opt = await optimizeImageBuffer(file.buffer, { quality, width: undefined, height: undefined, format: f, mimetype: file.mimetype });
+                    const opt = await optimizeImageBuffer(file.buffer, {
+                        quality,
+                        width: undefined,
+                        height: undefined,
+                        format: f,
+                        mimetype: file.mimetype
+                    });
                     if (!stripMeta) {
                         const sharpLib = (await import("sharp")).default;
                         opt.data = await sharpLib(opt.data).withMetadata().toBuffer();
@@ -224,7 +274,13 @@ app.post("/api/optimize/zip", upload.array("files", 20), async (req: express.Req
                     archive.append(opt.data, { name: `${base}.${opt.format}` });
                 }
             } else {
-                const optimized = await optimizeImageBuffer(file.buffer, { quality, width: undefined, height: undefined, format, mimetype: file.mimetype });
+                const optimized = await optimizeImageBuffer(file.buffer, {
+                    quality,
+                    width: undefined,
+                    height: undefined,
+                    format,
+                    mimetype: file.mimetype
+                });
                 archive.append(optimized.data, { name: optimized.filename });
             }
         }

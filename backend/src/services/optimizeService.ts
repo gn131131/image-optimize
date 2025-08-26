@@ -10,7 +10,10 @@ interface OptimizeOptions {
 
 // const LOSSY_SET = new Set(["image/jpeg", "image/webp", "image/avif"]); // reserved for future heuristics
 
-export async function optimizeImageBuffer(buf: Buffer, opts: OptimizeOptions): Promise<{ data: Buffer; filename: string; format: string }> {
+export async function optimizeImageBuffer(
+    buf: Buffer,
+    opts: OptimizeOptions
+): Promise<{ data: Buffer; filename: string; format: string }> {
     let pipeline: Sharp = sharp(buf, { failOn: "none" });
     if (opts.width || opts.height) {
         pipeline = pipeline.resize({ width: opts.width, height: opts.height, fit: "inside", withoutEnlargement: true });
@@ -52,13 +55,20 @@ export async function estimateBestFormat(buf: Buffer, mimetype: string, quality:
         try {
             const webpSize = (await sharp(buf).webp({ quality }).toBuffer()).length;
             if (webpSize < buf.length * 0.9) return "webp"; // >10% savings
-    } catch { /* ignore probe errors */ }
+        } catch {
+            /* ignore probe errors */
+        }
         return "png";
     }
     return "webp";
 }
 
-export async function resolveFormat(requested: string, mimetype: string, buf: Buffer, quality: number): Promise<string> {
+export async function resolveFormat(
+    requested: string,
+    mimetype: string,
+    buf: Buffer,
+    quality: number
+): Promise<string> {
     if (requested && requested !== "auto") return normalizeFormat(requested);
     return estimateBestFormat(buf, mimetype, quality);
 }

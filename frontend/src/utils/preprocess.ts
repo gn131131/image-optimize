@@ -22,7 +22,11 @@ function chooseFormat(file: File, format: PreprocessOptions["format"]): { mime: 
     return { mime: "image/webp", ext: "webp" };
 }
 
-export async function preprocessImages(files: File[], opts: PreprocessOptions, onProgress?: (done: number, total: number) => void): Promise<PreprocessedItem[]> {
+export async function preprocessImages(
+    files: File[],
+    opts: PreprocessOptions,
+    onProgress?: (done: number, total: number) => void
+): Promise<PreprocessedItem[]> {
     const out: PreprocessedItem[] = [];
     let done = 0;
     for (const file of files) {
@@ -31,7 +35,13 @@ export async function preprocessImages(files: File[], opts: PreprocessOptions, o
             out.push(item);
         } catch (e) {
             // push original if fail
-            out.push({ original: file, processed: file, originalSize: file.size, processedSize: file.size, skipped: true });
+            out.push({
+                original: file,
+                processed: file,
+                originalSize: file.size,
+                processedSize: file.size,
+                skipped: true
+            });
         }
         done++;
         onProgress?.(done, files.length);
@@ -47,12 +57,19 @@ async function preprocessSingle(file: File, opts: PreprocessOptions): Promise<Pr
     const blob = new Blob([arrayBuf], { type: file.type });
     const img = await createImageBitmap(blob, { imageOrientation: "from-image" });
     const { width, height } = img;
-    const scale = Math.min(1, opts.maxWidth > 0 ? opts.maxWidth / width : 1, opts.maxHeight > 0 ? opts.maxHeight / height : 1);
+    const scale = Math.min(
+        1,
+        opts.maxWidth > 0 ? opts.maxWidth / width : 1,
+        opts.maxHeight > 0 ? opts.maxHeight / height : 1
+    );
     const needResize = scale < 1;
     const targetW = Math.round(width * scale);
     const targetH = Math.round(height * scale);
     const fmt = chooseFormat(file, opts.format);
-    const needReencode = fmt.mime !== file.type || needResize || (opts.quality < 1 && (fmt.mime === "image/jpeg" || fmt.mime === "image/webp"));
+    const needReencode =
+        fmt.mime !== file.type ||
+        needResize ||
+        (opts.quality < 1 && (fmt.mime === "image/jpeg" || fmt.mime === "image/webp"));
     if (!needReencode) {
         return { original: file, processed: file, originalSize: file.size, processedSize: file.size, skipped: true };
     }
@@ -67,7 +84,13 @@ async function preprocessSingle(file: File, opts: PreprocessOptions): Promise<Pr
         canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), fmt.mime, q);
     });
     const processedFile = new File([blobOut], rename(file.name, fmt.ext), { type: fmt.mime, lastModified: Date.now() });
-    return { original: file, processed: processedFile, originalSize: file.size, processedSize: processedFile.size, skipped: false };
+    return {
+        original: file,
+        processed: processedFile,
+        originalSize: file.size,
+        processedSize: processedFile.size,
+        skipped: false
+    };
 }
 
 function rename(name: string, ext: string): string {

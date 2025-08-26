@@ -127,11 +127,28 @@ export const CompareModal: React.FC<Props> = ({ open, onClose, image, originalUr
     return (
         <div
             onClick={onClose}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000 }}
+            style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,.75)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 3000
+            }}
         >
             <div
                 onClick={(e) => e.stopPropagation()}
-                style={{ background: "#0d1117", padding: 20, borderRadius: 8, maxWidth: "90%", maxHeight: "90%", display: "flex", flexDirection: "column", gap: 16 }}
+                style={{
+                    background: "#0d1117",
+                    padding: 20,
+                    borderRadius: 8,
+                    maxWidth: "90%",
+                    maxHeight: "90%",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 16
+                }}
             >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <h3 style={{ margin: 0 }}>{image.originalName} 对比</h3>
@@ -139,7 +156,7 @@ export const CompareModal: React.FC<Props> = ({ open, onClose, image, originalUr
                 </div>
                 <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12, alignItems: "center" }}>
                     <label>
-                        分割: {" "}
+                        分割:{" "}
                         <input
                             type="range"
                             min={0}
@@ -147,14 +164,23 @@ export const CompareModal: React.FC<Props> = ({ open, onClose, image, originalUr
                             value={percent}
                             onChange={(e) => setPercent(Number(e.target.value))}
                             disabled={showDiff}
-                        /> {percent}%
+                        />{" "}
+                        {percent}%
                     </label>
                     <label>
-                        缩放: <input type="range" min={50} max={300} value={zoom * 100} onChange={(e) => setZoom(Number(e.target.value) / 100)} /> {Math.round(zoom * 100)}%
+                        缩放:{" "}
+                        <input
+                            type="range"
+                            min={50}
+                            max={300}
+                            value={zoom * 100}
+                            onChange={(e) => setZoom(Number(e.target.value) / 100)}
+                        />{" "}
+                        {Math.round(zoom * 100)}%
                     </label>
                     {image.variants && (
                         <label>
-                            版本: {" "}
+                            版本:{" "}
                             <select value={variant} onChange={(e) => setVariant(e.target.value)}>
                                 {image.variants.map((v) => (
                                     <option key={v.format} value={v.format}>
@@ -168,12 +194,15 @@ export const CompareModal: React.FC<Props> = ({ open, onClose, image, originalUr
                         {showDiff ? "退出差异热图" : "差异热图"}
                     </button>
                     <span style={{ opacity: 0.7 }}>
-                        原始 {(baseOriginalSize / 1024).toFixed(1)}KB → 最佳 {(baseOptimizedSize / 1024).toFixed(1)}KB 节省 {(saved / 1024).toFixed(1)}KB ({((1 - ratio) * 100).toFixed(1)}%)
+                        原始 {(baseOriginalSize / 1024).toFixed(1)}KB → 最佳 {(baseOptimizedSize / 1024).toFixed(1)}KB
+                        节省 {(saved / 1024).toFixed(1)}KB ({((1 - ratio) * 100).toFixed(1)}%)
                     </span>
                 </div>
                 {/* 统计表 */}
                 {image.variants && image.variants.length > 0 && (
-                    <div style={{ background: "#161b22", padding: 8, borderRadius: 6, maxHeight: 140, overflow: "auto" }}>
+                    <div
+                        style={{ background: "#161b22", padding: 8, borderRadius: 6, maxHeight: 140, overflow: "auto" }}
+                    >
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                             <thead>
                                 <tr style={{ textAlign: "left" }}>
@@ -189,7 +218,12 @@ export const CompareModal: React.FC<Props> = ({ open, onClose, image, originalUr
                                     const save = (baseOriginalSize - v.size) / 1024;
                                     const rr = v.size / baseOriginalSize;
                                     return (
-                                        <tr key={v.format} style={{ background: v.format === currentVariant?.format ? "#1f242d" : undefined }}>
+                                        <tr
+                                            key={v.format}
+                                            style={{
+                                                background: v.format === currentVariant?.format ? "#1f242d" : undefined
+                                            }}
+                                        >
                                             <td style={{ padding: "4px 6px" }}>{v.format}</td>
                                             <td style={{ padding: "4px 6px" }}>{(v.size / 1024).toFixed(2)}</td>
                                             <td style={{ padding: "4px 6px" }}>{save.toFixed(2)}</td>
@@ -211,7 +245,15 @@ export const CompareModal: React.FC<Props> = ({ open, onClose, image, originalUr
                 )}
                 <div
                     ref={containerRef}
-                    style={{ position: "relative", flex: 1, minWidth: 600, minHeight: 300, overflow: "hidden", cursor: showDiff ? "default" : "ew-resize", background: "#161b22" }}
+                    style={{
+                        position: "relative",
+                        flex: 1,
+                        minWidth: 600,
+                        minHeight: 300,
+                        overflow: "hidden",
+                        cursor: showDiff ? "default" : "ew-resize",
+                        background: "#161b22"
+                    }}
                     onMouseDown={(e) => {
                         if (showDiff) return;
                         dragRef.current = true;
@@ -229,15 +271,43 @@ export const CompareModal: React.FC<Props> = ({ open, onClose, image, originalUr
                     {originalUrl ? (
                         <img
                             src={originalUrl}
-                            style={{ position: "absolute", inset: 0, objectFit: "contain", width: "100%", height: "100%", transform: `scale(${zoom})`, transformOrigin: "top left" }}
+                            style={{
+                                position: "absolute",
+                                inset: 0,
+                                objectFit: "contain",
+                                width: "100%",
+                                height: "100%",
+                                transform: `scale(${zoom})`,
+                                transformOrigin: "top left"
+                            }}
                         />
                     ) : (
-                        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#888" }}>原始图不可用</div>
+                        <div
+                            style={{
+                                position: "absolute",
+                                inset: 0,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "#888"
+                            }}
+                        >
+                            原始图不可用
+                        </div>
                     )}
                     {!showDiff && (
                         <img
                             src={optimizedUrl}
-                            style={{ position: "absolute", inset: 0, objectFit: "contain", width: `${100 / zoom}%`, height: `${100 / zoom}%`, transform: `scale(${zoom})`, transformOrigin: "top left", clipPath: `inset(0 ${100 - percent}% 0 0)` }}
+                            style={{
+                                position: "absolute",
+                                inset: 0,
+                                objectFit: "contain",
+                                width: `${100 / zoom}%`,
+                                height: `${100 / zoom}%`,
+                                transform: `scale(${zoom})`,
+                                transformOrigin: "top left",
+                                clipPath: `inset(0 ${100 - percent}% 0 0)`
+                            }}
                         />
                     )}
                     {showDiff && (
@@ -252,7 +322,7 @@ export const CompareModal: React.FC<Props> = ({ open, onClose, image, originalUr
                                         justifyContent: "center",
                                         background: "rgba(0,0,0,.4)",
                                         color: "#fff",
-                                        fontSize: 14,
+                                        fontSize: 14
                                     }}
                                 >
                                     差异计算中...
@@ -269,7 +339,7 @@ export const CompareModal: React.FC<Props> = ({ open, onClose, image, originalUr
                                         height: `${100 / zoom}%`,
                                         transform: `scale(${zoom})`,
                                         transformOrigin: "top left",
-                                        mixBlendMode: "normal",
+                                        mixBlendMode: "normal"
                                     }}
                                 />
                             )}
@@ -277,13 +347,42 @@ export const CompareModal: React.FC<Props> = ({ open, onClose, image, originalUr
                     )}
                     {!showDiff && (
                         <div
-                            style={{ position: "absolute", top: 0, bottom: 0, left: `${percent}%`, width: 2, background: "#ffab00", pointerEvents: "none", boxShadow: "0 0 4px rgba(0,0,0,.6)" }}
+                            style={{
+                                position: "absolute",
+                                top: 0,
+                                bottom: 0,
+                                left: `${percent}%`,
+                                width: 2,
+                                background: "#ffab00",
+                                pointerEvents: "none",
+                                boxShadow: "0 0 4px rgba(0,0,0,.6)"
+                            }}
                         />
                     )}
-                    <div style={{ position: "absolute", top: 8, left: 8, background: "rgba(0,0,0,.5)", padding: "2px 6px", borderRadius: 4, fontSize: 12 }}>
+                    <div
+                        style={{
+                            position: "absolute",
+                            top: 8,
+                            left: 8,
+                            background: "rgba(0,0,0,.5)",
+                            padding: "2px 6px",
+                            borderRadius: 4,
+                            fontSize: 12
+                        }}
+                    >
                         原始
                     </div>
-                    <div style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,.5)", padding: "2px 6px", borderRadius: 4, fontSize: 12 }}>
+                    <div
+                        style={{
+                            position: "absolute",
+                            top: 8,
+                            right: 8,
+                            background: "rgba(0,0,0,.5)",
+                            padding: "2px 6px",
+                            borderRadius: 4,
+                            fontSize: 12
+                        }}
+                    >
                         {showDiff ? "差异热图" : "优化"}
                     </div>
                 </div>

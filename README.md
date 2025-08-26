@@ -52,22 +52,40 @@ npm run dev
 
 ### Docker / docker-compose
 
-构建并启动（前端静态资源 + 后端 API）:
+#### 开发（本地自行构建镜像）
 ```powershell
 docker compose build
 docker compose up -d
 ```
-访问: http://localhost:8080 (前端) ；后端健康检查 http://localhost:3001/health
+默认前端映射端口已改为 18080，可通过环境变量覆盖：
+```powershell
+$env:FRONTEND_PORT=30080; docker compose up -d
+```
+访问: http://localhost:18080 (或自定义端口)；健康检查 http://localhost:3001/health
 
-停止与清理:
+#### 生产（CI 已推送镜像）
+当前 `docker-compose.yml` 直接引用私有仓库 `docker.pumpking.life` 镜像：
+```yaml
+image: docker.pumpking.life/image-opt-backend:latest
+image: docker.pumpking.life/image-opt-frontend:latest
+```
+部署步骤：
+```bash
+docker login docker.pumpking.life
+docker compose pull
+TAG=latest FRONTEND_PORT=18080 docker compose up -d
+```
+如需部署指定 commit：将 CI 生成的 `sha-xxxx` 标签替换 `TAG`。
+
+#### 停止与清理
 ```powershell
 docker compose down
 ```
 
-仅构建镜像：
+#### 单独构建（调试用）
 ```powershell
-docker build -f Dockerfile.backend -t image-opt-backend .
-docker build -f Dockerfile.frontend -t image-opt-frontend .
+docker build -f Dockerfile.backend -t image-opt-backend:dev .
+docker build -f Dockerfile.frontend -t image-opt-frontend:dev .
 ```
 
 ## TODO / 后续可扩展

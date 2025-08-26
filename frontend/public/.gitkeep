@@ -1,0 +1,1 @@
+# 占位文件：确保空的 public 目录被 Git 跟踪，用于 Docker 构建阶段 COPY。

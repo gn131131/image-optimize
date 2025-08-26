@@ -7,9 +7,10 @@ interface Props {
     onPickCompare: (item: QueueItem) => void;
     onRemove: (id: string) => void;
     onDownload: (item: QueueItem) => void;
+    onRetry?: (item: QueueItem) => void;
 }
 
-const ImageItem: React.FC<Props> = ({ item, onPickCompare, onRemove, onDownload }) => {
+const ImageItem: React.FC<Props> = ({ item, onPickCompare, onRemove, onDownload, onRetry }) => {
     const ratio = item.compressedSize && item.originalSize ? 100 - (item.compressedSize / item.originalSize) * 100 : 0;
     return (
         <div className="image-item">
@@ -32,6 +33,7 @@ const ImageItem: React.FC<Props> = ({ item, onPickCompare, onRemove, onDownload 
                 <button onClick={() => onDownload(item)} disabled={!item.compressedBlob}>
                     下载
                 </button>
+                {item.status === "error" && onRetry && <button onClick={() => onRetry(item)}>重试</button>}
                 <button className="danger" onClick={() => onRemove(item.id)}>
                     删除
                 </button>

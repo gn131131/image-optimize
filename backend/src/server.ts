@@ -59,6 +59,37 @@ interface CacheEntry {
 }
 const RESULT_CACHE = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 分钟
+const MAX_CACHE_BYTES = Number(process.env.MAX_CACHE_BYTES || 300 * 1024 * 1024); // 300MB 默认
+const MAX_CACHE_ITEMS = Number(process.env.MAX_CACHE_ITEMS || 500); // 最大条目数
+
+function currentCacheBytes() {
+    let sum = 0;
+    for (const v of RESULT_CACHE.values()) sum += v.size;
+    return sum;
+}
+
+function evictIfNeeded(extraBytes: number) {
+    if (extraBytes > MAX_CACHE_BYTES) return false; // 单个结果过大，直接失败
+    let bytes = currentCacheBytes();
+    if (bytes + extraBytes <= MAX_CACHE_BYTES && RESULT_CACHE.size < MAX_CACHE_ITEMS) return true;
+    const now = Date.now();
+    // 先基于 TTL 清除过期
+    for (const [k, v] of RESULT_CACHE) {
+        if (now - v.created > CACHE_TTL_MS) {
+            RESULT_CACHE.delete(k);
+        }
+    }
+    bytes = currentCacheBytes();
+    while ((bytes + extraBytes > MAX_CACHE_BYTES || RESULT_CACHE.size >= MAX_CACHE_ITEMS) && RESULT_CACHE.size) {
+        // Map 迭代顺序即插入顺序 -> 移除最旧
+        const firstKey = RESULT_CACHE.keys().next().value as string | undefined;
+        if (!firstKey) break;
+        const removed = RESULT_CACHE.get(firstKey);
+        RESULT_CACHE.delete(firstKey);
+        if (removed) bytes -= removed.size;
+    }
+    return bytes + extraBytes <= MAX_CACHE_BYTES;
+}
 
 setInterval(() => {
     const now = Date.now();
@@ -71,6 +102,15 @@ app.post("/api/compress", upload.array("files"), async (req, res) => {
     const qualityRaw = Number(req.query.quality);
     const quality = Number.isFinite(qualityRaw) ? Math.min(100, Math.max(1, qualityRaw)) : 70;
     const inputFiles = (req.files as Express.Multer.File[]) || [];
+    // 解析前端提供的 originalName -> clientId 映射（避免同名随机 ID 不匹配）
+    let clientMap: Record<string, string> = {};
+    if (req.body && typeof req.body.clientMap === "string") {
+        try {
+            clientMap = JSON.parse(req.body.clientMap);
+        } catch {
+            // ignore invalid json
+        }
+    }
     // 限制检查
     if (inputFiles.length > MAX_FILES) {
         return res.status(400).json({ error: `too_many_files(max ${MAX_FILES})` });
@@ -81,18 +121,62 @@ app.post("/api/compress", upload.array("files"), async (req, res) => {
     }
     // 并发限制
     const limit = createLimiter(4); // 可调 4~8
+    const FILE_TIMEOUT_MS = Number(process.env.FILE_TIMEOUT_MS || 30000); // 单文件处理超时 30s
+    const MAX_PIXELS = Number(process.env.MAX_PIXELS || 35_000_000); // 超过则尝试等比缩放（约 35MP）
+
+    function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => T | Promise<T>): Promise<T> {
+        return new Promise((resolve) => {
+            let settled = false;
+            const timer = setTimeout(async () => {
+                if (settled) return;
+                settled = true;
+                resolve(await onTimeout());
+            }, ms);
+            p.then((v) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                resolve(v);
+            }).catch((e) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                resolve(onTimeout());
+            });
+        });
+    }
+
+    const ID_SEP = "__IDSEP__"; // 与前端协同的 id 分隔符
     const tasks: Promise<CompressItemResult>[] = inputFiles.map((f) =>
         limit(async () => {
-            const clientId = crypto.randomUUID(); // 生成独立 ID (避免同名冲突)
+            // 尝试从 multipart filename 中拆出 queueId
+            let originalName = f.originalname;
+            let embeddedId: string | undefined;
+            const sepIndex = originalName.indexOf(ID_SEP);
+            if (sepIndex > -1) {
+                embeddedId = originalName.slice(0, sepIndex);
+                originalName = originalName.slice(sepIndex + ID_SEP.length);
+            }
+            const clientId = embeddedId || clientMap[originalName] || crypto.randomUUID(); // 使用嵌入 id -> map -> 随机
+            // 统一再写回 f.originalname 供后续逻辑使用真实文件名
+            (f as any).originalname = originalName;
             try {
                 if (!ALLOWED_MIME.includes(f.mimetype)) {
-                    return { id: clientId, originalName: f.originalname, error: "unsupported_type" };
+                    return { id: clientId, originalName, error: "unsupported_type" };
                 }
                 const meta = await sharp(f.buffer).metadata();
-                if ((meta.width || 0) * (meta.height || 0) > 80_000_000) {
-                    return { id: clientId, originalName: f.originalname, error: "dimensions_too_large" };
+                const totalPixels = (meta.width || 0) * (meta.height || 0);
+                if (totalPixels > 80_000_000) {
+                    return { id: clientId, originalName, error: "dimensions_too_large" };
                 }
-                let pipeline = sharp(f.buffer);
+                let pipeline = sharp(f.buffer, { failOn: "warning" });
+                // 超大像素进行等比缩放，使总像素不超过 MAX_PIXELS
+                if (totalPixels > MAX_PIXELS && meta.width && meta.height) {
+                    const scale = Math.sqrt(MAX_PIXELS / totalPixels);
+                    const targetW = Math.max(1, Math.floor(meta.width * scale));
+                    const targetH = Math.max(1, Math.floor(meta.height * scale));
+                    pipeline = pipeline.resize({ width: targetW, height: targetH, fit: "inside" });
+                }
                 if (f.mimetype.includes("jpeg")) {
                     pipeline = pipeline.jpeg({ quality, mozjpeg: true });
                 } else if (f.mimetype.includes("png")) {
@@ -100,17 +184,17 @@ app.post("/api/compress", upload.array("files"), async (req, res) => {
                 } else if (f.mimetype.includes("webp")) {
                     pipeline = pipeline.webp({ quality });
                 }
-                const outBuffer = await pipeline.toBuffer();
-                RESULT_CACHE.set(clientId, {
-                    buffer: outBuffer,
-                    mime: f.mimetype,
-                    filename: f.originalname,
-                    size: outBuffer.length,
-                    created: Date.now()
-                });
+                const outBuffer = await withTimeout(pipeline.toBuffer(), FILE_TIMEOUT_MS, () => Promise.resolve(Buffer.from([])));
+                if (!outBuffer.length) {
+                    return { id: clientId, originalName, error: "timeout" };
+                }
+                if (!evictIfNeeded(outBuffer.length)) {
+                    return { id: clientId, originalName, error: "cache_overflow" };
+                }
+                RESULT_CACHE.set(clientId, { buffer: outBuffer, mime: f.mimetype, filename: originalName, size: outBuffer.length, created: Date.now() });
                 return {
                     id: clientId,
-                    originalName: f.originalname,
+                    originalName,
                     mime: f.mimetype,
                     originalSize: f.size,
                     compressedSize: outBuffer.length,
@@ -119,7 +203,7 @@ app.post("/api/compress", upload.array("files"), async (req, res) => {
                     downloadUrl: `/api/download/${clientId}`
                 };
             } catch (err: any) {
-                return { id: clientId, originalName: f.originalname, error: err.message || "compress_failed" };
+                return { id: clientId, originalName, error: err.message || "compress_failed" };
             }
         })
     );

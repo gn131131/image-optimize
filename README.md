@@ -64,6 +64,11 @@ Start-Process http://localhost:8080
 后端支持：
 - `PORT` (默认 4000)
 - `LOG_LEVEL` (info / debug)
+- `MAX_FILE_SIZE` (单文件最大字节数，默认 26214400 ≈25MB)
+- `RATE_WINDOW_MS` (限流窗口毫秒，默认 60000)
+- `RATE_MAX` (窗口内最大请求数，默认 120)
+- `MAX_CONCURRENCY` (单请求内部并行图像处理任务数，默认 4)
+- `PIXEL_LIMIT` (像素上限 width*height，默认 30000000)
 
 前端构建时可设置：
 - `VITE_API_BASE` (缺省为空 -> 同域 `/api`，本地开发使用 `http://localhost:4000`)
@@ -78,6 +83,7 @@ $env:VITE_API_BASE='http://localhost:4000'; npm --workspace frontend run dev
 - 如需开启 HTTPS，可在外层再加一层反向代理（例如 Caddy / Traefik / Nginx 主实例）或使用云提供商负载均衡。
 - `metrics` 端点当前未做鉴权，生产建议仅内网开放或加上 Basic Auth / 网关策略。
 - 可在后端添加更多指标（缓存命中率、处理错误类型分类）。
+	- 已添加 `opt_cache_hit_total` / `opt_cache_miss_total` 统计命中与未命中。
 - 若需要水平扩展，请把当前内存 LRU 换为 Redis / Memcached，并使用内容哈希防止重复计算。
 - Sharp 已使用官方预构建二进制；若需极致瘦身，可改用 `node:slim` + `docker buildx` 做多架构构建。
 

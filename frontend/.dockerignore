@@ -1,7 +1,0 @@
-node_modules
-dist
-.git
-Dockerfile
-npm-debug.log
-*.md
-*.log

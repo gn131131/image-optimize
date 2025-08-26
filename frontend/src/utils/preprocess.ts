@@ -46,11 +46,11 @@ async function preprocessSingle(file: File, opts: PreprocessOptions): Promise<Pr
     const arrayBuf = await file.arrayBuffer();
     const blob = new Blob([arrayBuf], { type: file.type });
     const img = await createImageBitmap(blob, { imageOrientation: "from-image" });
-    let { width, height } = img;
+    const { width, height } = img;
     const scale = Math.min(1, opts.maxWidth > 0 ? opts.maxWidth / width : 1, opts.maxHeight > 0 ? opts.maxHeight / height : 1);
     const needResize = scale < 1;
-    let targetW = Math.round(width * scale);
-    let targetH = Math.round(height * scale);
+    const targetW = Math.round(width * scale);
+    const targetH = Math.round(height * scale);
     const fmt = chooseFormat(file, opts.format);
     const needReencode = fmt.mime !== file.type || needResize || (opts.quality < 1 && (fmt.mime === "image/jpeg" || fmt.mime === "image/webp"));
     if (!needReencode) {

@@ -8,7 +8,7 @@ interface OptimizeOptions {
     mimetype: string;
 }
 
-const LOSSY_SET = new Set(["image/jpeg", "image/webp", "image/avif"]);
+// const LOSSY_SET = new Set(["image/jpeg", "image/webp", "image/avif"]); // reserved for future heuristics
 
 export async function optimizeImageBuffer(buf: Buffer, opts: OptimizeOptions): Promise<{ data: Buffer; filename: string; format: string }> {
     let pipeline: Sharp = sharp(buf, { failOn: "none" });
@@ -52,7 +52,7 @@ export async function estimateBestFormat(buf: Buffer, mimetype: string, quality:
         try {
             const webpSize = (await sharp(buf).webp({ quality }).toBuffer()).length;
             if (webpSize < buf.length * 0.9) return "webp"; // >10% savings
-        } catch {}
+    } catch { /* ignore probe errors */ }
         return "png";
     }
     return "webp";

@@ -9,9 +9,16 @@
         "install:all": "npm install --workspaces",
         "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
         "dev:backend": "npm --workspace backend run dev",
-        "dev:frontend": "npm --workspace frontend run dev"
+        "dev:frontend": "npm --workspace frontend run dev",
+        "lint": "eslint . --ext .ts,.tsx",
+        "test": "npm --workspace backend run test"
     },
     "devDependencies": {
-        "concurrently": "^8.2.2"
+        "@typescript-eslint/eslint-plugin": "^7.11.0",
+        "@typescript-eslint/parser": "^7.11.0",
+        "concurrently": "^8.2.2",
+        "eslint": "^8.57.0",
+        "eslint-config-prettier": "^10.1.8",
+        "prettier": "^3.2.5"
     }
 }

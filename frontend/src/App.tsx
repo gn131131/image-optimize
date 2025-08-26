@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from "react";
 import axios from "axios";
 import { DropZone } from "./components/DropZone";
-import { ImageCard } from "./components/ImageCard";
+// import { ImageCard } from "./components/ImageCard"; // legacy component unused currently
 import { formatSize } from "./utils/format";
 import { preprocessImages } from "./utils/preprocess";
 import { OptimizedImageInfo } from "./types";

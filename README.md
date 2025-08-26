@@ -39,6 +39,26 @@ npm run dev
 ```
 默认监听 http://localhost:3001。
 
+### Docker / docker-compose
+
+构建并启动（前端静态资源 + 后端 API）:
+```powershell
+docker compose build
+docker compose up -d
+```
+访问: http://localhost:8080 (前端) ；后端健康检查 http://localhost:3001/health
+
+停止与清理:
+```powershell
+docker compose down
+```
+
+仅构建镜像：
+```powershell
+docker build -f Dockerfile.backend -t image-opt-backend .
+docker build -f Dockerfile.frontend -t image-opt-frontend .
+```
+
 ## TODO / 后续可扩展
 
 - Web Worker + OffscreenCanvas 并行压缩，避免主线程卡顿

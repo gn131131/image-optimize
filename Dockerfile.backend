@@ -1,0 +1,16 @@
+# Backend Dockerfile (multi-stage)
+FROM node:20-alpine AS base
+WORKDIR /app
+COPY backend/package*.json backend/tsconfig.json ./
+RUN npm install --production=false
+COPY backend/src ./src
+RUN npm run build
+
+FROM node:20-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=base /app/dist ./dist
+COPY backend/package*.json ./
+RUN npm install --omit=dev
+EXPOSE 3001
+CMD ["node","dist/server.js"]

@@ -1,0 +1,26 @@
+version: "3.9"
+services:
+    backend:
+        build:
+            context: .
+            dockerfile: Dockerfile.backend
+        container_name: image-opt-backend
+        ports:
+            - "3001:3001"
+        environment:
+            - NODE_ENV=production
+        restart: unless-stopped
+    frontend:
+        build:
+            context: .
+            dockerfile: Dockerfile.frontend
+        container_name: image-opt-frontend
+        depends_on:
+            - backend
+        ports:
+            - "8080:80"
+        restart: unless-stopped
+# 用法:
+# docker compose build
+# docker compose up -d
+# 浏览器访问 http://localhost:8080

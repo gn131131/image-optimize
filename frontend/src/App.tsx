@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import UploadArea from "./components/UploadArea";
 import { QueueItem } from "./types";
 import { formatBytes, readFileAsDataUrl } from "./utils/compress";
@@ -14,24 +14,43 @@ const App: React.FC = () => {
     const [serverUrl] = useState<string>(import.meta.env.VITE_API_BASE || "http://localhost:3001");
     const [batching, setBatching] = useState(false);
 
-    const addFiles = useCallback(async (files: File[]) => {
-        const mapped: QueueItem[] = await Promise.all(
-            files.map(async (f) => ({
-                id: crypto.randomUUID(),
-                file: f,
-                originalSize: f.size,
-                status: "pending",
-                originalDataUrl: await readFileAsDataUrl(f)
-            }))
-        );
-        setItems((prev) => [...prev, ...mapped]);
-    }, []);
+    const addFiles = useCallback(
+        async (files: File[]) => {
+            if (!files.length) return;
+            const ALLOWED = ["image/jpeg", "image/png", "image/webp"]; // 与后端一致
+            const MAX_SINGLE = 50 * 1024 * 1024;
+            const MAX_TOTAL = 200 * 1024 * 1024;
+            const existing = items.length;
+            const MAX_FILES = 30;
+            const filtered: File[] = [];
+            let totalAdd = 0;
+            for (const f of files) {
+                if (!ALLOWED.includes(f.type)) continue;
+                if (f.size > MAX_SINGLE) continue;
+                if (existing + filtered.length >= MAX_FILES) break;
+                if (totalAdd + f.size > MAX_TOTAL) break;
+                filtered.push(f);
+                totalAdd += f.size;
+            }
+            const mapped: QueueItem[] = await Promise.all(
+                filtered.map(async (f) => ({
+                    id: crypto.randomUUID(),
+                    file: f,
+                    originalSize: f.size,
+                    status: "pending",
+                    originalDataUrl: await readFileAsDataUrl(f)
+                }))
+            );
+            if (mapped.length) setItems((prev) => [...prev, ...mapped]);
+        },
+        [items]
+    );
 
     const sendToServer = useCallback(
         async (targets: QueueItem[], q: number) => {
             if (!targets.length) return;
             setBatching(true);
-            targets.forEach((t) => setItems((prev) => prev.map((i) => (i.id === t.id ? { ...i, status: "compressing" } : i))));
+            setItems((prev) => prev.map((i) => (targets.some((t) => t.id === i.id) ? { ...i, status: "compressing", error: undefined } : i)));
             const form = new FormData();
             targets.forEach((t) => form.append("files", t.file, t.file.name));
             const url = `${serverUrl}/api/compress?quality=${q}`;
@@ -40,13 +59,14 @@ const App: React.FC = () => {
                 if (!resp.ok) throw new Error(`服务器响应 ${resp.status}`);
                 const data = await resp.json();
                 const map: Record<string, any> = {};
-                data.items.forEach((it: any) => {
+                (data.items || []).forEach((it: any) => {
                     map[it.originalName] = it;
                 });
                 setItems((prev) =>
                     prev.map((i) => {
                         const hit = map[i.file.name];
                         if (!hit) return i;
+                        if (hit.error) return { ...i, status: "error", error: hit.error };
                         const b64 = hit.data;
                         const mime = hit.mime;
                         const blob = b64ToBlob(b64, mime);
@@ -76,13 +96,17 @@ const App: React.FC = () => {
         if (pendings.length) sendToServer(pendings, quality);
     }, [items, quality, sendToServer]);
 
-    // 质量改变重新压缩（服务端批量）
+    // 质量改变重新压缩（服务端批量）增加 debounce
+    const debounceRef = useRef<number | null>(null);
     useEffect(() => {
         if (!autoRecompress) return;
-        const dones = items.filter((i) => i.status === "done");
-        if (dones.length) sendToServer(dones, quality);
+        if (debounceRef.current) window.clearTimeout(debounceRef.current);
+        debounceRef.current = window.setTimeout(() => {
+            const dones = items.filter((i) => i.status === "done");
+            if (dones.length) sendToServer(dones, quality);
+        }, 300);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [quality]);
+    }, [quality, autoRecompress, items]);
 
     const remove = (id: string) => {
         setItems((prev) => prev.filter((i) => i.id !== id));

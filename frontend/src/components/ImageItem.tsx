@@ -4,37 +4,65 @@ import { formatBytes } from "../utils/compress";
 
 interface Props {
     item: QueueItem;
-    onPickCompare: (item: QueueItem) => void;
+    selected: boolean;
+    onSelect: (item: QueueItem) => void;
     onRemove: (id: string) => void;
     onDownload: (item: QueueItem) => void;
     onRetry?: (item: QueueItem) => void;
+    batching: boolean;
 }
 
-const ImageItem: React.FC<Props> = ({ item, onPickCompare, onRemove, onDownload, onRetry }) => {
-    const ratio = item.compressedSize && item.originalSize ? 100 - (item.compressedSize / item.originalSize) * 100 : 0;
+const statusColor: Record<string, string> = {
+    pending: "#666d78",
+    compressing: "#1d6fd9",
+    done: "#2f9d59",
+    error: "#d9463b"
+};
+// 状态文字取消，采用左侧色条 + 动画表示
+
+const ImageItem: React.FC<Props> = ({ item, selected, onSelect, onRemove, onDownload, onRetry, batching }) => {
+    const diffPct = item.compressedSize && item.originalSize ? ((item.compressedSize - item.originalSize) / item.originalSize) * 100 : 0;
+    let diffEl: React.ReactNode = null;
+    if (item.compressedSize) {
+        if (Math.abs(diffPct) < 0.05) {
+            diffEl = <span style={{ color: "#b0bac5" }}>0.0%</span>;
+        } else if (diffPct < 0) {
+            diffEl = <span style={{ color: "#4caf50" }}>↓{Math.abs(diffPct).toFixed(1)}%</span>;
+        } else {
+            diffEl = <span style={{ color: "#ffb347" }}>↑{diffPct.toFixed(1)}%</span>;
+        }
+    }
     return (
-        <div className="image-item">
+        <div className={`image-item status-${item.status} ${selected ? "selected" : ""}`} onClick={() => onSelect(item)} style={{ cursor: "pointer" }}>
+            <div className="status-bar" />
             <img className="thumb" src={item.originalDataUrl} alt="thumb" />
-            <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <strong style={{ fontSize: ".8rem", wordBreak: "break-all" }}>{item.file.name}</strong>
-                    <span className="badge">{item.status}</span>
+            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }} className="file-name-row">
+                    <strong className="file-name" style={{ wordBreak: "break-all", flex: 1 }}>
+                        {item.file.name}
+                    </strong>
                 </div>
-                <div className="size-diff">
-                    {formatBytes(item.originalSize)} → {item.compressedSize ? formatBytes(item.compressedSize) : "-"}{" "}
-                    {item.compressedSize && <span style={{ color: "#4caf50" }}> (↓{ratio.toFixed(1)}%)</span>}
+                <div className="size-diff meta-line" style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                    <span>
+                        {formatBytes(item.originalSize)} → {item.compressedSize ? formatBytes(item.compressedSize) : "-"}
+                    </span>
+                    {diffEl}
+                    <span className="quality-pill" style={{ marginLeft: "auto" }}>
+                        {item.lastQuality === 100 || item.quality === 100 ? "原图" : `Q:${item.quality}`}
+                    </span>
                 </div>
-                {item.error && <div style={{ color: "#ff6b6b", fontSize: ".7rem" }}>{item.error}</div>}
+                {item.error && <div style={{ color: "#ff6b6b", fontSize: ".68rem" }}>{item.error}</div>}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <button onClick={() => onPickCompare(item)} disabled={!item.compressedBlob}>
-                    对比
-                </button>
-                <button onClick={() => onDownload(item)} disabled={!item.compressedBlob}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }} onClick={(e) => e.stopPropagation()} className="item-actions">
+                <button onClick={() => onDownload(item)} disabled={!item.compressedBlob || item.status !== "done" || item.lastQuality === 100} className="sm-btn">
                     下载
                 </button>
-                {item.status === "error" && onRetry && <button onClick={() => onRetry(item)}>重试</button>}
-                <button className="danger" onClick={() => onRemove(item.id)}>
+                {item.status === "error" && onRetry && (
+                    <button onClick={() => onRetry(item)} className="sm-btn">
+                        重试
+                    </button>
+                )}
+                <button className="danger sm-btn" onClick={() => onRemove(item.id)}>
                     删除
                 </button>
             </div>

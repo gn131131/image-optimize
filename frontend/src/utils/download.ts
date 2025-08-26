@@ -4,8 +4,8 @@ import { QueueItem } from "../types";
 
 export async function downloadSingle(item: QueueItem) {
     if (!item.compressedBlob) return;
-    const ext = guessExt(item.compressedBlob.type) || "jpg";
-    saveAs(item.compressedBlob, baseName(item.file.name) + `-q.${ext}`);
+    const ext = originalExt(item.file.name) || guessExt(item.compressedBlob.type) || "jpg";
+    saveAs(item.compressedBlob, baseName(item.file.name) + `-min.${ext}`);
 }
 
 export async function downloadZip(items: QueueItem[]) {
@@ -13,8 +13,8 @@ export async function downloadZip(items: QueueItem[]) {
     items
         .filter((i) => i.compressedBlob)
         .forEach((i) => {
-            const ext = guessExt(i.compressedBlob!.type) || "jpg";
-            zip.file(baseName(i.file.name) + `-q.${ext}`, i.compressedBlob!);
+            const ext = originalExt(i.file.name) || guessExt(i.compressedBlob!.type) || "jpg";
+            zip.file(baseName(i.file.name) + `-min.${ext}`, i.compressedBlob!);
         });
     const blob = await zip.generateAsync({ type: "blob" });
     saveAs(blob, `compressed-${Date.now()}.zip`);
@@ -22,6 +22,10 @@ export async function downloadZip(items: QueueItem[]) {
 
 function baseName(name: string) {
     return name.replace(/\.[^.]+$/, "");
+}
+function originalExt(name: string) {
+    const m = name.match(/\.([^.]+)$/);
+    return m ? m[1].toLowerCase() : "";
 }
 function guessExt(mime: string) {
     if (mime.includes("jpeg")) return "jpg";

@@ -8,20 +8,19 @@ import CompareSlider from "./components/CompareSlider";
 
 const App: React.FC = () => {
     const [items, setItems] = useState<QueueItem[]>([]);
-    const [quality, setQuality] = useState(70);
     const [compare, setCompare] = useState<QueueItem | null>(null);
-    const [autoRecompress, setAutoRecompress] = useState(true);
     const [serverUrl] = useState<string>(import.meta.env.VITE_API_BASE || "http://localhost:3001");
     const [batching, setBatching] = useState(false);
 
+    // --- 添加文件（初始 pending，稍后批量发送） ---
     const addFiles = useCallback(
         async (files: File[]) => {
             if (!files.length) return;
-            const ALLOWED = ["image/jpeg", "image/png", "image/webp"]; // 与后端一致
+            const ALLOWED = ["image/jpeg", "image/png", "image/webp"];
             const MAX_SINGLE = 50 * 1024 * 1024;
             const MAX_TOTAL = 200 * 1024 * 1024;
-            const existing = items.length;
             const MAX_FILES = 30;
+            const existing = items.length;
             const filtered: File[] = [];
             let totalAdd = 0;
             for (const f of files) {
@@ -33,39 +32,57 @@ const App: React.FC = () => {
                 totalAdd += f.size;
             }
             const mapped: QueueItem[] = await Promise.all(
-                filtered.map(async (f) => ({
-                    id: crypto.randomUUID(),
-                    file: f,
-                    originalSize: f.size,
-                    status: "pending",
-                    originalDataUrl: await readFileAsDataUrl(f)
-                }))
+                filtered.map(async (f) => {
+                    // 依据格式选一个近乎无损的缺省质量 (经验值)
+                    let dq = 70; // 回退
+                    if (f.type.includes("jpeg")) dq = 85; // JPEG 80~85 视觉接近原图
+                    else if (f.type.includes("png")) dq = 85; // PNG palette 时质量影响量化，可取较高
+                    else if (f.type.includes("webp")) dq = 80; // WebP 80 基本接近原图
+                    return {
+                        id: crypto.randomUUID(),
+                        file: f,
+                        originalSize: f.size,
+                        quality: dq,
+                        lastQuality: dq,
+                        status: "pending",
+                        originalDataUrl: await readFileAsDataUrl(f)
+                    } as QueueItem;
+                })
             );
-            if (mapped.length) setItems((prev) => [...prev, ...mapped]);
+            if (mapped.length) {
+                setItems((prev) => {
+                    const next = [...prev, ...mapped];
+                    if (!compare && next.length) setCompare(next[0]);
+                    return next;
+                });
+            }
         },
-        [items]
+        [items, compare]
     );
 
+    // --- 发送压缩请求 ---
+    const sendAbortRef = useRef<AbortController | null>(null);
     const sendToServer = useCallback(
         async (targets: QueueItem[], q: number) => {
             if (!targets.length) return;
             setBatching(true);
-            setItems((prev) => prev.map((i) => (targets.some((t) => t.id === i.id) ? { ...i, status: "compressing", error: undefined } : i)));
+            const targetIds = new Set(targets.map((t) => t.id));
+            setItems((prev) =>
+                prev.map((i) => {
+                    if (!targetIds.has(i.id)) return i;
+                    // 重新压缩且已有结果: 保留原图显示不改 compressed 状态, 只标记 recompressing
+                    if (i.recompressing && i.compressedBlob) return { ...i, error: undefined };
+                    return { ...i, status: "compressing", error: undefined };
+                })
+            );
             const form = new FormData();
-            const ID_SEP = "__IDSEP__"; // 罕见分隔符，嵌入文件名传递 id，防止中文/同名导致映射失败
-            targets.forEach((t) => {
-                // 通过 multipart 自定义 filename (不修改 File 对象本身) 传递 id
-                form.append("files", t.file, `${t.id}${ID_SEP}${t.file.name}`);
-            });
-            // 仍保留原有映射做向后兼容 (服务器优先使用嵌入 id)
+            const ID_SEP = "__IDSEP__";
+            targets.forEach((t) => form.append("files", t.file, `${t.id}${ID_SEP}${t.file.name}`));
             const clientMap: Record<string, string> = {};
             targets.forEach((t) => (clientMap[t.file.name] = t.id));
             form.append("clientMap", JSON.stringify(clientMap));
             const url = `${serverUrl}/api/compress?quality=${q}`;
-            // 取消上一次仍在执行的请求
-            if (sendAbortRef.current) {
-                sendAbortRef.current.abort();
-            }
+            if (sendAbortRef.current) sendAbortRef.current.abort();
             const controller = new AbortController();
             sendAbortRef.current = controller;
             try {
@@ -73,52 +90,37 @@ const App: React.FC = () => {
                 if (!resp.ok) throw new Error(`服务器响应 ${resp.status}`);
                 const data = await resp.json();
                 const map: Record<string, any> = {};
-                const mapName: Record<string, any> = {};
+                const nameMap: Record<string, any> = {};
                 (data.items || []).forEach((it: any) => {
                     map[it.id] = it;
-                    mapName[it.originalName] = it;
+                    nameMap[it.originalName] = it;
                 });
+                // 先更新元数据（不替换 blob）
                 setItems((prev) =>
                     prev.map((i) => {
-                        let hit = map[i.id];
-                        if (!hit) {
-                            // 回退通过文件名匹配（用于排查 id 不一致问题）
-                            hit = mapName[i.file.name];
-                            if (hit) {
-                                console.warn("Fallback matched by originalName; check id mapping for", i.file.name);
-                            }
-                        }
-                        if (!hit) {
-                            // 如果没有匹配且仍处在 compressing，标记异常
-                            if (i.status === "compressing") {
-                                return { ...i, status: "error", error: "no_result" };
-                            }
-                            return i;
-                        }
-                        if (hit.error) return { ...i, status: "error", error: hit.error };
-                        return { ...i, status: "done", downloadUrl: hit.downloadUrl, compressedSize: hit.compressedSize };
+                        const hit = map[i.id] || nameMap[i.file.name];
+                        if (!hit) return i;
+                        if (hit.error) return { ...i, status: "error", error: hit.error, recompressing: false };
+                        return { ...i, compressedSize: hit.compressedSize, downloadUrl: hit.downloadUrl, status: i.compressedBlob ? "done" : "done" };
                     })
                 );
-                // 后续异步获取二进制 Blob (避免阻塞 UI)
+                // 下载新 blob
+                const ts = Date.now();
                 (data.items || []).forEach(async (hit: any) => {
                     if (hit.error) return;
                     try {
-                        const bResp = await fetch(`${serverUrl}${hit.downloadUrl}`, { signal: controller.signal });
+                        const bResp = await fetch(`${serverUrl}${hit.downloadUrl}?t=${ts}`, { signal: controller.signal });
                         if (!bResp.ok) throw new Error("下载失败");
                         const blob = await bResp.blob();
-                        setItems((prev) => prev.map((i) => (i.id === hit.id ? { ...i, compressedBlob: blob } : i)));
+                        setItems((prev) => prev.map((i) => (i.id === hit.id ? { ...i, compressedBlob: blob, lastQuality: i.quality, recompressing: false, status: "done" } : i)));
                     } catch (err: any) {
-                        if (controller.signal.aborted) return; // 忽略取消
-                        setItems((prev) => prev.map((i) => (i.id === hit.id ? { ...i, status: "error", error: err.message } : i)));
+                        if (controller.signal.aborted) return;
+                        setItems((prev) => prev.map((i) => (i.id === hit.id ? { ...i, status: "error", error: err.message, recompressing: false } : i)));
                     }
                 });
             } catch (e: any) {
-                if (controller.signal.aborted) {
-                    // 还原为 pending 以便下一轮重新处理
-                    setItems((prev) => prev.map((i) => (targets.some((t) => t.id === i.id) ? { ...i, status: i.compressedBlob ? "done" : "pending" } : i)));
-                    return;
-                }
-                setItems((prev) => prev.map((i) => (targets.some((t) => t.id === i.id) ? { ...i, status: "error", error: (e as any).message } : i)));
+                if ((e as any).name === "AbortError") return; // 忽略取消
+                setItems((prev) => prev.map((i) => (targetIds.has(i.id) ? { ...i, status: "error", error: (e as any).message, recompressing: false } : i)));
             } finally {
                 setBatching(false);
             }
@@ -126,36 +128,22 @@ const App: React.FC = () => {
         [serverUrl]
     );
 
-    // base64 已移除
-
-    // 新增或待处理 -> 发送服务器压缩
+    // --- 处理新 pending 项批量发送 ---
     const processedRef = useRef<Set<string>>(new Set());
     useEffect(() => {
         const pendings = items.filter((i) => i.status === "pending" && !processedRef.current.has(i.id));
         if (!pendings.length) return;
         pendings.forEach((p) => processedRef.current.add(p.id));
-        sendToServer(pendings, quality);
-    }, [items, quality, sendToServer]);
+        const groups = new Map<number, QueueItem[]>();
+        pendings.forEach((p) => {
+            const g = groups.get(p.quality) || [];
+            g.push(p);
+            groups.set(p.quality, g);
+        });
+        groups.forEach((group, q) => sendToServer(group, q));
+    }, [items, sendToServer]);
 
-    // 质量改变重新压缩（服务端批量）增加 debounce
-    const debounceRef = useRef<number | null>(null);
-    const lastQualityRef = useRef<number>(quality);
-    const sendAbortRef = useRef<AbortController | null>(null);
-    useEffect(() => {
-        if (!autoRecompress) return;
-        if (quality === lastQualityRef.current) return; // 仅在质量真正变化时触发
-        lastQualityRef.current = quality;
-        if (debounceRef.current) window.clearTimeout(debounceRef.current);
-        debounceRef.current = window.setTimeout(() => {
-            // 使用当前最新 items (闭包读取) 重新压缩 done 项
-            setItems((prev) => {
-                const dones = prev.filter((i) => i.status === "done");
-                if (dones.length) sendToServer(dones, quality);
-                return prev; // 不直接修改，只触发逻辑
-            });
-        }, 300);
-    }, [quality, autoRecompress, sendToServer]);
-
+    // --- 删除/清空 ---
     const remove = (id: string) => {
         setItems((prev) => prev.filter((i) => i.id !== id));
         if (compare?.id === id) setCompare(null);
@@ -165,17 +153,26 @@ const App: React.FC = () => {
         setCompare(null);
     };
 
-    // compare 选中的条目在 re-compress 后保持同步，自动刷新对比图
+    // --- compare 同步 ---
     useEffect(() => {
-        if (!compare) return;
-        const fresh = items.find((i) => i.id === compare.id);
-        if (fresh && fresh !== compare) {
-            setCompare(fresh);
+        if (!compare && items.length) setCompare(items[0]);
+        if (compare) {
+            const fresh = items.find((i) => i.id === compare.id);
+            if (fresh && fresh !== compare) setCompare(fresh);
         }
     }, [items, compare]);
 
+    // --- 批量下载 ---
     const batchDownload = async () => {
-        await downloadZip(items.filter((i) => i.compressedBlob));
+        await downloadZip(items.filter((i) => i.compressedBlob && i.lastQuality !== 100));
+    };
+
+    // --- 应用质量（重新压缩） ---
+    const applyQuality = () => {
+        if (!compare) return;
+        setItems((prev) => prev.map((p) => (p.id === compare.id ? { ...p, recompressing: true } : p)));
+        const target = items.find((i) => i.id === compare.id);
+        if (target) sendToServer([{ ...target, recompressing: true }], target.quality);
     };
 
     return (
@@ -186,12 +183,6 @@ const App: React.FC = () => {
             <div className="container">
                 <UploadArea onFiles={addFiles} />
                 <div className="toolbar">
-                    <label>
-                        质量: <input type="range" min={1} max={100} value={quality} onChange={(e) => setQuality(Number(e.target.value))} /> {quality}
-                    </label>
-                    <label style={{ fontSize: ".75rem" }}>
-                        <input type="checkbox" checked={autoRecompress} onChange={(e) => setAutoRecompress(e.target.checked)} /> 改变质量自动重压缩
-                    </label>
                     <button onClick={batchDownload} disabled={!items.some((i) => i.compressedBlob) || batching}>
                         批量下载
                     </button>
@@ -200,7 +191,7 @@ const App: React.FC = () => {
                     </button>
                     {batching && <span style={{ fontSize: ".7rem", color: "#4ea1ff" }}>压缩中...</span>}
                     {items.length > 0 && (
-                        <span style={{ fontSize: ".75rem", opacity: 0.7 }}>
+                        <span style={{ fontSize: ".78rem", opacity: 0.75 }}>
                             合计原始: {formatBytes(items.reduce((a, b) => a + b.originalSize, 0))} / 压缩后: {formatBytes(items.reduce((a, b) => a + (b.compressedSize || 0), 0))}
                         </span>
                     )}
@@ -210,24 +201,60 @@ const App: React.FC = () => {
                         <ImageItem
                             key={it.id}
                             item={it}
-                            onPickCompare={setCompare}
+                            selected={compare?.id === it.id}
+                            batching={batching}
+                            onSelect={(item) => setCompare(item)}
                             onRemove={remove}
                             onDownload={downloadSingle}
                             onRetry={(item) => {
                                 setItems((prev) => prev.map((p) => (p.id === item.id ? { ...p, status: "pending", error: undefined } : p)));
-                                processedRef.current.delete(item.id); // 允许重新发送
+                                processedRef.current.delete(item.id);
                             }}
                         />
                     ))}
                     {!items.length && <div className="empty-hint">暂无图片，拖拽或点击上方区域添加</div>}
                 </div>
-                <div style={{ marginTop: "2rem" }}>
-                    <h3 style={{ margin: "0 0 .5rem" }}>对比</h3>
+                <div style={{ marginTop: "2.2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
                     {compare ? (
-                        <CompareObject compare={compare} />
-                    ) : (
+                        <>
+                            <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                                <label style={{ fontSize: ".85rem" }}>质量</label>
+                                <input
+                                    type="range"
+                                    min={1}
+                                    max={100}
+                                    value={compare.quality}
+                                    onChange={(e) => {
+                                        const v = Number(e.target.value);
+                                        setItems((prev) => prev.map((p) => (p.id === compare.id ? { ...p, quality: v } : p)));
+                                        setCompare((c) => (c && c.id === compare.id ? { ...c, quality: v } : c));
+                                    }}
+                                    style={{ width: 360 }}
+                                />
+                                <span style={{ fontSize: ".85rem", width: 40, textAlign: "center", fontWeight: 600 }}>{compare.quality}</span>
+                                <button
+                                    className="primary"
+                                    style={{ padding: ".46rem .95rem" }}
+                                    disabled={batching || compare.recompressing || compare.quality === compare.lastQuality}
+                                    onClick={applyQuality}
+                                >
+                                    应用
+                                </button>
+                                {compare.recompressing && <span style={{ fontSize: ".65rem", color: "#4ea1ff" }}>重新压缩中...</span>}
+                            </div>
+                            <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
+                                <div style={{ transform: "scale(1.05)", maxWidth: 900, width: "100%" }}>
+                                    <CompareObject compare={compare} />
+                                </div>
+                            </div>
+                        </>
+                    ) : items.length ? (
                         <div className="empty-hint" style={{ padding: "1rem", border: "1px dashed #333", borderRadius: 8 }}>
-                            选择一张已压缩图片进行对比
+                            请选择图片
+                        </div>
+                    ) : (
+                        <div className="empty-hint" style={{ padding: "2rem", border: "1px dashed #333", borderRadius: 8 }}>
+                            上传图片后这里显示实时对比
                         </div>
                     )}
                 </div>
@@ -239,19 +266,18 @@ const App: React.FC = () => {
 
 export default App;
 
-// 独立组件管理 object URL 生命周期
+// --- 独立组件: 管理 object URL 生命周期 ---
 const CompareObject: React.FC<{ compare: QueueItem }> = ({ compare }) => {
-    const [url, setUrl] = useState<string | undefined>(undefined);
+    const [url, setUrl] = useState<string | undefined>();
     useEffect(() => {
         if (compare.compressedBlob) {
             const obj = URL.createObjectURL(compare.compressedBlob);
             setUrl(obj);
-            return () => {
-                URL.revokeObjectURL(obj);
-            };
-        } else {
-            setUrl(undefined);
+            return () => URL.revokeObjectURL(obj);
         }
+        setUrl(undefined);
     }, [compare.compressedBlob, compare.id, compare.compressedSize]);
     return <CompareSlider original={compare.originalDataUrl} compressed={url} />;
 };
+
+export {};

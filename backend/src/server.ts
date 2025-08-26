@@ -170,12 +170,14 @@ app.post("/api/compress", upload.array("files"), async (req, res) => {
                     return { id: clientId, originalName, error: "dimensions_too_large" };
                 }
                 let pipeline = sharp(f.buffer, { failOn: "warning" });
+                let scaled = false;
                 // 超大像素进行等比缩放，使总像素不超过 MAX_PIXELS
                 if (totalPixels > MAX_PIXELS && meta.width && meta.height) {
                     const scale = Math.sqrt(MAX_PIXELS / totalPixels);
                     const targetW = Math.max(1, Math.floor(meta.width * scale));
                     const targetH = Math.max(1, Math.floor(meta.height * scale));
                     pipeline = pipeline.resize({ width: targetW, height: targetH, fit: "inside" });
+                    scaled = true;
                 }
                 if (f.mimetype.includes("jpeg")) {
                     pipeline = pipeline.jpeg({ quality, mozjpeg: true });
@@ -188,16 +190,21 @@ app.post("/api/compress", upload.array("files"), async (req, res) => {
                 if (!outBuffer.length) {
                     return { id: clientId, originalName, error: "timeout" };
                 }
-                if (!evictIfNeeded(outBuffer.length)) {
+                // 如果未缩放且压缩后反而变大/不变，则保留原文件，避免用户看到“变大”情况
+                let finalBuffer = outBuffer;
+                if (!scaled && outBuffer.length >= f.size) {
+                    finalBuffer = f.buffer; // 回退到原始
+                }
+                if (!evictIfNeeded(finalBuffer.length)) {
                     return { id: clientId, originalName, error: "cache_overflow" };
                 }
-                RESULT_CACHE.set(clientId, { buffer: outBuffer, mime: f.mimetype, filename: originalName, size: outBuffer.length, created: Date.now() });
+                RESULT_CACHE.set(clientId, { buffer: finalBuffer, mime: f.mimetype, filename: originalName, size: finalBuffer.length, created: Date.now() });
                 return {
                     id: clientId,
                     originalName,
                     mime: f.mimetype,
                     originalSize: f.size,
-                    compressedSize: outBuffer.length,
+                    compressedSize: finalBuffer.length,
                     width: meta.width,
                     height: meta.height,
                     downloadUrl: `/api/download/${clientId}`
@@ -237,6 +244,7 @@ app.get("/api/download/:id", (req, res) => {
     if (!entry) return res.status(404).send("not_found");
     res.setHeader("Content-Type", entry.mime);
     res.setHeader("Content-Length", entry.size.toString());
-    res.setHeader("Cache-Control", "public, max-age=300");
+    // 由于同一个 queueId 可能多次重压缩（质量改变覆写缓存），禁用浏览器缓存避免获取旧版本
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
     res.send(entry.buffer);
 });

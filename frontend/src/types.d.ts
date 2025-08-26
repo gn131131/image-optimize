@@ -5,7 +5,7 @@ export interface QueueItem {
     compressedBlob?: Blob;
     compressedSize?: number; // bytes
     originalDataUrl?: string;
-    compressedDataUrl?: string;
+    downloadUrl?: string; // server download endpoint
     status: "pending" | "compressing" | "done" | "error";
     error?: string;
 }

@@ -1,18 +1,18 @@
 export interface CompressItemResultSuccess {
+    id: string; // client-provided or parsed unique id
     originalName: string;
     mime: string;
     originalSize: number;
     compressedSize: number;
     width?: number;
     height?: number;
-    data?: string; // base64 (may omit in future optimizations)
-    id: string; // echo back client-provided id
+    downloadUrl: string; // endpoint to fetch binary
 }
 
 export interface CompressItemResultError {
+    id: string;
     originalName: string;
     error: string;
-    id: string;
 }
 
 export type CompressItemResult = CompressItemResultSuccess | CompressItemResultError;

@@ -3,6 +3,7 @@ import cors from "cors";
 import multer from "multer";
 import sharp from "sharp";
 import type { CompressResponse, CompressItemResult } from "./types/dto";
+import crypto from "crypto";
 
 // 简易并发控制器 (替代外部依赖 p-limit 以减少额外体积)
 function createLimiter(max: number) {
@@ -46,9 +47,25 @@ const MAX_FILES = 30;
 const MAX_SINGLE = 50 * 1024 * 1024;
 const MAX_TOTAL = 200 * 1024 * 1024;
 const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp"];
-const upload = multer({
-    limits: { fileSize: MAX_SINGLE }
-});
+const upload = multer({ limits: { fileSize: MAX_SINGLE } });
+
+// 内存缓存: 简易存储压缩结果 (生产可换 Redis / 对象存储)
+interface CacheEntry {
+    buffer: Buffer;
+    mime: string;
+    filename: string;
+    size: number;
+    created: number;
+}
+const RESULT_CACHE = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 分钟
+
+setInterval(() => {
+    const now = Date.now();
+    for (const [k, v] of RESULT_CACHE) {
+        if (now - v.created > CACHE_TTL_MS) RESULT_CACHE.delete(k);
+    }
+}, 60 * 1000).unref();
 
 app.post("/api/compress", upload.array("files"), async (req, res) => {
     const qualityRaw = Number(req.query.quality);
@@ -66,16 +83,14 @@ app.post("/api/compress", upload.array("files"), async (req, res) => {
     const limit = createLimiter(4); // 可调 4~8
     const tasks: Promise<CompressItemResult>[] = inputFiles.map((f) =>
         limit(async () => {
-            const base: Partial<CompressItemResult> = { originalName: f.originalname } as any;
-            const clientId = (req.body && (req.body[`${f.originalname}.id`] as string)) || ""; // 可选: 将前端附加 id 回显
+            const clientId = crypto.randomUUID(); // 生成独立 ID (避免同名冲突)
             try {
                 if (!ALLOWED_MIME.includes(f.mimetype)) {
-                    return { originalName: f.originalname, error: "unsupported_type", id: clientId };
+                    return { id: clientId, originalName: f.originalname, error: "unsupported_type" };
                 }
-                // 像素防护: 先探测 metadata
                 const meta = await sharp(f.buffer).metadata();
                 if ((meta.width || 0) * (meta.height || 0) > 80_000_000) {
-                    return { originalName: f.originalname, error: "dimensions_too_large", id: clientId };
+                    return { id: clientId, originalName: f.originalname, error: "dimensions_too_large" };
                 }
                 let pipeline = sharp(f.buffer);
                 if (f.mimetype.includes("jpeg")) {
@@ -86,18 +101,25 @@ app.post("/api/compress", upload.array("files"), async (req, res) => {
                     pipeline = pipeline.webp({ quality });
                 }
                 const outBuffer = await pipeline.toBuffer();
+                RESULT_CACHE.set(clientId, {
+                    buffer: outBuffer,
+                    mime: f.mimetype,
+                    filename: f.originalname,
+                    size: outBuffer.length,
+                    created: Date.now()
+                });
                 return {
+                    id: clientId,
                     originalName: f.originalname,
                     mime: f.mimetype,
                     originalSize: f.size,
                     compressedSize: outBuffer.length,
                     width: meta.width,
                     height: meta.height,
-                    data: outBuffer.toString("base64"),
-                    id: clientId
+                    downloadUrl: `/api/download/${clientId}`
                 };
             } catch (err: any) {
-                return { originalName: f.originalname, error: err.message || "compress_failed", id: clientId };
+                return { id: clientId, originalName: f.originalname, error: err.message || "compress_failed" };
             }
         })
     );
@@ -122,4 +144,15 @@ app.post("/api/compress", upload.array("files"), async (req, res) => {
 const port = process.env.PORT || 3001;
 app.listen(port, () => {
     console.log(`Backend server listening on :${port}`);
+});
+
+// 下载端点 (临时缓存)
+app.get("/api/download/:id", (req, res) => {
+    const id = req.params.id;
+    const entry = RESULT_CACHE.get(id);
+    if (!entry) return res.status(404).send("not_found");
+    res.setHeader("Content-Type", entry.mime);
+    res.setHeader("Content-Length", entry.size.toString());
+    res.setHeader("Cache-Control", "public, max-age=300");
+    res.send(entry.buffer);
 });

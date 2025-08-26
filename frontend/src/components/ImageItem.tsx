@@ -26,7 +26,7 @@ const ImageItem: React.FC<Props> = ({ item, onPickCompare, onRemove, onDownload 
                 {item.error && <div style={{ color: "#ff6b6b", fontSize: ".7rem" }}>{item.error}</div>}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <button onClick={() => onPickCompare(item)} disabled={!item.compressedDataUrl}>
+                <button onClick={() => onPickCompare(item)} disabled={!item.compressedBlob}>
                     对比
                 </button>
                 <button onClick={() => onDownload(item)} disabled={!item.compressedBlob}>

@@ -60,19 +60,28 @@ const App: React.FC = () => {
                 const data = await resp.json();
                 const map: Record<string, any> = {};
                 (data.items || []).forEach((it: any) => {
-                    map[it.originalName] = it;
+                    map[it.id] = it;
                 });
                 setItems((prev) =>
                     prev.map((i) => {
-                        const hit = map[i.file.name];
+                        const hit = map[i.id];
                         if (!hit) return i;
                         if (hit.error) return { ...i, status: "error", error: hit.error };
-                        const b64 = hit.data;
-                        const mime = hit.mime;
-                        const blob = b64ToBlob(b64, mime);
-                        return { ...i, status: "done", compressedBlob: blob, compressedSize: blob.size, compressedDataUrl: `data:${mime};base64,${b64}` };
+                        return { ...i, status: "done", downloadUrl: hit.downloadUrl, compressedSize: hit.compressedSize };
                     })
                 );
+                // 后续异步获取二进制 Blob (避免阻塞 UI)
+                (data.items || []).forEach(async (hit: any) => {
+                    if (hit.error) return;
+                    try {
+                        const bResp = await fetch(`${serverUrl}${hit.downloadUrl}`);
+                        if (!bResp.ok) throw new Error("下载失败");
+                        const blob = await bResp.blob();
+                        setItems((prev) => prev.map((i) => (i.id === hit.id ? { ...i, compressedBlob: blob } : i)));
+                    } catch (err: any) {
+                        setItems((prev) => prev.map((i) => (i.id === hit.id ? { ...i, status: "error", error: err.message } : i)));
+                    }
+                });
             } catch (e: any) {
                 setItems((prev) => prev.map((i) => (targets.some((t) => t.id === i.id) ? { ...i, status: "error", error: e.message } : i)));
             } finally {
@@ -82,13 +91,7 @@ const App: React.FC = () => {
         [serverUrl]
     );
 
-    function b64ToBlob(b64: string, mime: string) {
-        const binary = atob(b64);
-        const len = binary.length;
-        const arr = new Uint8Array(len);
-        for (let i = 0; i < len; i++) arr[i] = binary.charCodeAt(i);
-        return new Blob([arr], { type: mime });
-    }
+    // base64 已移除
 
     // 新增或待处理 -> 发送服务器压缩
     useEffect(() => {
@@ -157,7 +160,7 @@ const App: React.FC = () => {
                 <div style={{ marginTop: "2rem" }}>
                     <h3 style={{ margin: "0 0 .5rem" }}>对比</h3>
                     {compare ? (
-                        <CompareSlider original={compare.originalDataUrl} compressed={compare.compressedDataUrl} />
+                        <CompareSlider original={compare.originalDataUrl} compressed={compare.compressedBlob ? URL.createObjectURL(compare.compressedBlob) : undefined} />
                     ) : (
                         <div className="empty-hint" style={{ padding: "1rem", border: "1px dashed #333", borderRadius: 8 }}>
                             选择一张已压缩图片进行对比

@@ -5,6 +5,7 @@ import { formatBytes, readFileAsDataUrl } from "./utils/compress";
 import { downloadSingle, downloadZip } from "./utils/download";
 import ImageItem from "./components/ImageItem";
 import CompareSlider from "./components/CompareSlider";
+import { generateId } from "./utils/uuid";
 
 const App: React.FC = () => {
     const [items, setItems] = useState<QueueItem[]>([]);
@@ -39,7 +40,7 @@ const App: React.FC = () => {
                     else if (f.type.includes("png")) dq = 85; // PNG palette 时质量影响量化，可取较高
                     else if (f.type.includes("webp")) dq = 80; // WebP 80 基本接近原图
                     return {
-                        id: crypto.randomUUID(),
+                        id: generateId(),
                         file: f,
                         originalSize: f.size,
                         quality: dq,

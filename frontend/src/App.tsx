@@ -10,7 +10,17 @@ import { generateId } from "./utils/uuid";
 const App: React.FC = () => {
     const [items, setItems] = useState<QueueItem[]>([]);
     const [compare, setCompare] = useState<QueueItem | null>(null);
-    const [serverUrl] = useState<string>(import.meta.env.VITE_API_BASE || "http://localhost:3001");
+    // 后端基址：
+    // 优先使用 VITE_API_BASE；未设置时在生产回退到同源(使用相对路径)，在开发回退到 http://localhost:3001
+    const [serverUrl] = useState<string>(() => {
+        const raw = (import.meta as any).env?.VITE_API_BASE as string | undefined;
+        if (raw && raw.trim()) return raw.replace(/\/$/, "");
+        if (typeof window !== "undefined" && window.location.hostname !== "localhost") {
+            // 生产：同源，相对路径空串即可
+            return ""; // 这样 fetch 时会生成 /api/xxx
+        }
+        return "http://localhost:3001"; // 开发默认
+    });
     const [batching, setBatching] = useState(false);
 
     // --- 添加文件（初始 pending，稍后批量发送） ---
@@ -82,7 +92,7 @@ const App: React.FC = () => {
             const clientMap: Record<string, string> = {};
             targets.forEach((t) => (clientMap[t.file.name] = t.id));
             form.append("clientMap", JSON.stringify(clientMap));
-            const url = `${serverUrl}/api/compress?quality=${q}`;
+            const url = `${serverUrl}/api/compress?quality=${q}`.replace(/\/\/api/, "/api"); // 防止出现 //api
             if (sendAbortRef.current) sendAbortRef.current.abort();
             const controller = new AbortController();
             sendAbortRef.current = controller;

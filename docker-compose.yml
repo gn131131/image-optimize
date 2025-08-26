@@ -1,0 +1,32 @@
+version: "3.9"
+services:
+    backend:
+        build: ./backend
+        environment:
+            - NODE_ENV=production
+            - LOG_LEVEL=info
+            - PORT=4000
+        expose:
+            - "4000"
+        restart: unless-stopped
+    frontend:
+        build: ./frontend
+        depends_on:
+            - backend
+        ports:
+            - "8080:80"
+        restart: unless-stopped
+
+    # Optional: Uncomment to run Prometheus scraping metrics
+    # prometheus:
+    #   image: prom/prometheus:latest
+    #   volumes:
+    #     - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    #   ports:
+    #     - "9090:9090"
+    #   depends_on:
+    #     - backend
+
+networks:
+    default:
+        name: image-optimize-net

@@ -1,0 +1,17 @@
+{
+    "name": "image-optimize-monorepo",
+    "private": true,
+    "workspaces": [
+        "backend",
+        "frontend"
+    ],
+    "scripts": {
+        "install:all": "npm install --workspaces",
+        "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
+        "dev:backend": "npm --workspace backend run dev",
+        "dev:frontend": "npm --workspace frontend run dev"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    }
+}

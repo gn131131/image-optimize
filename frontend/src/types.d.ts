@@ -17,4 +17,6 @@ export interface QueueItem {
     isChunked?: boolean; // 是否走分块流程
     chunkAbort?: AbortController; // 当前分块上传控制器
     canceled?: boolean; // 用户取消
+    phase?: "hash" | "upload" | "compress" | "download" | "done" | "canceled" | "error"; // 细化阶段
+    uploadPercent?: number; // 上传阶段百分比 (0-100)
 }

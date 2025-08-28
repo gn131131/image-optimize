@@ -86,7 +86,9 @@ const App: React.FC = () => {
                         status: isChunked ? "compressing" : "pending",
                         originalDataUrl: await readFileAsDataUrl(f),
                         isChunked,
-                        chunkProgress: isChunked ? 0 : undefined
+                        chunkProgress: isChunked ? 0 : undefined,
+                        phase: isChunked ? "hash" : undefined,
+                        uploadPercent: isChunked ? 0 : undefined
                     } as QueueItem;
                 })
             );
@@ -194,29 +196,44 @@ const App: React.FC = () => {
 
     // 监听需要分块的文件并启动上传
     useEffect(() => {
-        const chunkTargets = items.filter((i) => i.isChunked && i.status === "compressing" && !i.chunkUploadId && !i.error);
+        const chunkTargets = items.filter((i) => i.isChunked && i.status === "compressing" && !i.chunkUploadId && !i.error && !i.canceled);
         if (!chunkTargets.length) return;
         chunkTargets.forEach((it) => {
             (async () => {
                 try {
-                    // 计算 hash (避免重复计算，简单缓存到临时属性)
+                    // 1. 计算 / 复用 hash
                     let hash = (it as any)._hash as string | undefined;
                     if (!hash) {
+                        setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, phase: "hash" } : p)));
                         hash = await hashFileSHA256(it.file);
                         (it as any)._hash = hash;
                     }
+                    // 2. 上传
                     const { item, uploadId, instant } = await chunkUploadFile(it.file, {
                         serverBase: serverUrl,
                         quality: it.quality,
                         hash,
                         signal: it.chunkAbort?.signal,
                         onProgress: (loaded, total) => {
-                            setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, chunkProgress: loaded / total } : p)));
+                            setItems((prev) =>
+                                prev.map((p) =>
+                                    p.id === it.id
+                                        ? {
+                                              ...p,
+                                              chunkProgress: loaded / total,
+                                              phase: "upload",
+                                              uploadPercent: Math.round((loaded / total) * 100)
+                                          }
+                                        : p
+                                )
+                            );
                         }
                     });
+                    // 3. 秒传 - 直接下载
                     if (instant && item && item.downloadUrl) {
-                        // 秒传直接获取 blob
+                        setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, phase: "download", uploadPercent: 100 } : p)));
                         const bResp = await fetch(`${serverUrl}${item.downloadUrl}`);
+                        if (!bResp.ok) throw new Error("结果下载失败");
                         const blob = await bResp.blob();
                         setItems((prev) =>
                             prev.map((p) =>
@@ -229,14 +246,18 @@ const App: React.FC = () => {
                                           status: "done",
                                           lastQuality: p.quality,
                                           chunkUploadId: uploadId,
-                                          chunkProgress: 1
+                                          chunkProgress: 1,
+                                          phase: "done",
+                                          uploadPercent: 100
                                       }
                                     : p
                             )
                         );
                         return;
                     }
+                    // 4. 正常完成 - 下载结果
                     if (item && !item.error && item.downloadUrl) {
+                        setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, phase: "download", uploadPercent: 100 } : p)));
                         const bResp = await fetch(`${serverUrl}${item.downloadUrl}`);
                         if (!bResp.ok) throw new Error("结果下载失败");
                         const blob = await bResp.blob();
@@ -251,19 +272,45 @@ const App: React.FC = () => {
                                           status: "done",
                                           lastQuality: p.quality,
                                           chunkUploadId: uploadId,
-                                          chunkProgress: 1
+                                          chunkProgress: 1,
+                                          phase: "done",
+                                          uploadPercent: 100
                                       }
                                     : p
                             )
                         );
                     } else if (item?.error) {
-                        setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, status: "error", error: mapError(item.error), chunkUploadId: uploadId } : p)));
+                        setItems((prev) =>
+                            prev.map((p) =>
+                                p.id === it.id
+                                    ? {
+                                          ...p,
+                                          status: "error",
+                                          error: mapError(item.error),
+                                          chunkUploadId: uploadId,
+                                          phase: "error"
+                                      }
+                                    : p
+                            )
+                        );
                     }
                 } catch (e: any) {
                     if (e.message === "已取消") {
-                        setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, canceled: true } : p)));
+                        setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, canceled: true, phase: "canceled" } : p)));
                     } else {
-                        setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, status: "error", error: e.message, chunkProgress: undefined } : p)));
+                        setItems((prev) =>
+                            prev.map((p) =>
+                                p.id === it.id
+                                    ? {
+                                          ...p,
+                                          status: "error",
+                                          error: e.message,
+                                          chunkProgress: undefined,
+                                          phase: "error"
+                                      }
+                                    : p
+                            )
+                        );
                     }
                 }
             })();
@@ -272,20 +319,20 @@ const App: React.FC = () => {
 
     // 取消分块上传
     const cancelChunk = (item: QueueItem) => {
-        setItems((prev) => prev.map((p) => (p.id === item.id ? { ...p, canceled: true } : p)));
+        setItems((prev) => prev.map((p) => (p.id === item.id ? { ...p, canceled: true, phase: "canceled" } : p)));
         if (item.chunkAbort) {
             item.chunkAbort.abort();
         } else {
             const controller = new AbortController();
             controller.abort();
-            setItems((prev) => prev.map((p) => (p.id === item.id ? { ...p, chunkAbort: controller, canceled: true } : p)));
+            setItems((prev) => prev.map((p) => (p.id === item.id ? { ...p, chunkAbort: controller, canceled: true, phase: "canceled" } : p)));
         }
     };
 
     // 恢复分块上传 (断点续传)
     const resumeChunk = (item: QueueItem) => {
         const controller = new AbortController();
-        setItems((prev) => prev.map((p) => (p.id === item.id ? { ...p, canceled: false, chunkAbort: controller, status: "compressing" } : p)));
+        setItems((prev) => prev.map((p) => (p.id === item.id ? { ...p, canceled: false, chunkAbort: controller, status: "compressing", phase: "upload" } : p)));
     };
 
     // --- 删除/清空 ---

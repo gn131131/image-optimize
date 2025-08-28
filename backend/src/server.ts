@@ -98,7 +98,7 @@ setInterval(() => {
     }
 }, 60 * 1000).unref();
 
-app.post("/api/compress", upload.array("files"), async (req, res) => {
+app.post("/api/compress", upload.array("files"), async (req, res, next) => {
     const qualityRaw = Number(req.query.quality);
     const quality = Number.isFinite(qualityRaw) ? Math.min(100, Math.max(1, qualityRaw)) : 70;
     const inputFiles = (req.files as Express.Multer.File[]) || [];
@@ -227,9 +227,20 @@ app.post("/api/compress", upload.array("files"), async (req, res) => {
         };
         res.json(body);
     } catch (e: any) {
-        console.error("compress route fatal", e);
-        res.status(500).json({ error: e.message || "internal_error" });
+        return next(e);
     }
+});
+
+// 统一错误处理（包括 multer 限制）
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    if (err && err.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({ error: "file_too_large" });
+    }
+    if (err && err.code === "LIMIT_UNEXPECTED_FILE") {
+        return res.status(400).json({ error: "unexpected_file_field" });
+    }
+    console.error("unhandled_error", err);
+    res.status(500).json({ error: "internal_error" });
 });
 
 const port = process.env.PORT || 3001;

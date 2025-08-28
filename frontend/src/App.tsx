@@ -7,6 +7,27 @@ import ImageItem from "./components/ImageItem";
 import CompareSlider from "./components/CompareSlider";
 import { generateId } from "./utils/uuid";
 
+function mapError(code: string): string {
+    switch (code) {
+        case "file_too_large":
+            return "有文件超过单文件限制 50MB";
+        case "too_many_files":
+            return "文件数量超过限制";
+        case "total_size_exceeded":
+            return "总大小超过限制 200MB";
+        case "unsupported_type":
+            return "包含不支持的文件类型";
+        case "dimensions_too_large":
+            return "图片像素尺寸过大";
+        case "timeout":
+            return "处理超时";
+        case "cache_overflow":
+            return "服务器缓存不足，请稍后再试";
+        default:
+            return code || "未知错误";
+    }
+}
+
 const App: React.FC = () => {
     const [items, setItems] = useState<QueueItem[]>([]);
     const [compare, setCompare] = useState<QueueItem | null>(null);
@@ -22,6 +43,11 @@ const App: React.FC = () => {
         return "http://localhost:3001"; // 开发默认
     });
     const [batching, setBatching] = useState(false);
+    const [message, setMessage] = useState<string | null>(null);
+    const showMsg = useCallback((m: string) => {
+        setMessage(m);
+        setTimeout(() => setMessage((cur) => (cur === m ? null : cur)), 4000);
+    }, []);
 
     // --- 添加文件（初始 pending，稍后批量发送） ---
     const addFiles = useCallback(
@@ -98,7 +124,14 @@ const App: React.FC = () => {
             sendAbortRef.current = controller;
             try {
                 const resp = await fetch(url, { method: "POST", body: form, signal: controller.signal });
-                if (!resp.ok) throw new Error(`服务器响应 ${resp.status}`);
+                if (!resp.ok) {
+                    let errText = `服务器响应 ${resp.status}`;
+                    try {
+                        const js = await resp.json();
+                        if (js?.error) errText = mapError(js.error);
+                    } catch {}
+                    throw new Error(errText);
+                }
                 const data = await resp.json();
                 const map: Record<string, any> = {};
                 const nameMap: Record<string, any> = {};
@@ -131,12 +164,13 @@ const App: React.FC = () => {
                 });
             } catch (e: any) {
                 if ((e as any).name === "AbortError") return; // 忽略取消
+                showMsg((e as any).message || "上传失败");
                 setItems((prev) => prev.map((i) => (targetIds.has(i.id) ? { ...i, status: "error", error: (e as any).message, recompressing: false } : i)));
             } finally {
                 setBatching(false);
             }
         },
-        [serverUrl]
+        [serverUrl, showMsg]
     );
 
     // --- 处理新 pending 项批量发送 ---
@@ -192,7 +226,24 @@ const App: React.FC = () => {
                 <h2>在线图片压缩 (服务端处理)</h2>
             </header>
             <div className="container">
-                <UploadArea onFiles={addFiles} />
+                <UploadArea onFiles={addFiles} onRejectInfo={showMsg} />
+                {message && (
+                    <div
+                        style={{
+                            position: "fixed",
+                            top: 12,
+                            right: 12,
+                            background: "#222",
+                            color: "#fff",
+                            padding: "8px 14px",
+                            borderRadius: 6,
+                            fontSize: ".75rem",
+                            boxShadow: "0 4px 14px rgba(0,0,0,.3)"
+                        }}
+                    >
+                        {message}
+                    </div>
+                )}
                 <div className="toolbar">
                     <button onClick={batchDownload} disabled={!items.some((i) => i.compressedBlob) || batching}>
                         批量下载

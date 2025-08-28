@@ -6,6 +6,7 @@ import { downloadSingle, downloadZip } from "./utils/download";
 import ImageItem from "./components/ImageItem";
 import CompareSlider from "./components/CompareSlider";
 import { generateId } from "./utils/uuid";
+import { chunkUploadFile, hashFileSHA256 } from "./utils/chunkUpload";
 
 function mapError(code: string): string {
     switch (code) {
@@ -54,7 +55,7 @@ const App: React.FC = () => {
         async (files: File[]) => {
             if (!files.length) return;
             const ALLOWED = ["image/jpeg", "image/png", "image/webp"];
-            const MAX_SINGLE = 50 * 1024 * 1024;
+            const MAX_SINGLE = 50 * 1024 * 1024; // 普通批量接口限制
             const MAX_TOTAL = 200 * 1024 * 1024;
             const MAX_FILES = 30;
             const existing = items.length;
@@ -75,14 +76,17 @@ const App: React.FC = () => {
                     if (f.type.includes("jpeg")) dq = 85; // JPEG 80~85 视觉接近原图
                     else if (f.type.includes("png")) dq = 85; // PNG palette 时质量影响量化，可取较高
                     else if (f.type.includes("webp")) dq = 80; // WebP 80 基本接近原图
+                    const isChunked = f.size > MAX_SINGLE; // 超过普通接口限制则走分块
                     return {
                         id: generateId(),
                         file: f,
                         originalSize: f.size,
                         quality: dq,
                         lastQuality: dq,
-                        status: "pending",
-                        originalDataUrl: await readFileAsDataUrl(f)
+                        status: isChunked ? "compressing" : "pending",
+                        originalDataUrl: await readFileAsDataUrl(f),
+                        isChunked,
+                        chunkProgress: isChunked ? 0 : undefined
                     } as QueueItem;
                 })
             );
@@ -188,6 +192,102 @@ const App: React.FC = () => {
         groups.forEach((group, q) => sendToServer(group, q));
     }, [items, sendToServer]);
 
+    // 监听需要分块的文件并启动上传
+    useEffect(() => {
+        const chunkTargets = items.filter((i) => i.isChunked && i.status === "compressing" && !i.chunkUploadId && !i.error);
+        if (!chunkTargets.length) return;
+        chunkTargets.forEach((it) => {
+            (async () => {
+                try {
+                    // 计算 hash (避免重复计算，简单缓存到临时属性)
+                    let hash = (it as any)._hash as string | undefined;
+                    if (!hash) {
+                        hash = await hashFileSHA256(it.file);
+                        (it as any)._hash = hash;
+                    }
+                    const { item, uploadId, instant } = await chunkUploadFile(it.file, {
+                        serverBase: serverUrl,
+                        quality: it.quality,
+                        hash,
+                        signal: it.chunkAbort?.signal,
+                        onProgress: (loaded, total) => {
+                            setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, chunkProgress: loaded / total } : p)));
+                        }
+                    });
+                    if (instant && item && item.downloadUrl) {
+                        // 秒传直接获取 blob
+                        const bResp = await fetch(`${serverUrl}${item.downloadUrl}`);
+                        const blob = await bResp.blob();
+                        setItems((prev) =>
+                            prev.map((p) =>
+                                p.id === it.id
+                                    ? {
+                                          ...p,
+                                          compressedBlob: blob,
+                                          compressedSize: item.compressedSize || blob.size,
+                                          downloadUrl: item.downloadUrl,
+                                          status: "done",
+                                          lastQuality: p.quality,
+                                          chunkUploadId: uploadId,
+                                          chunkProgress: 1
+                                      }
+                                    : p
+                            )
+                        );
+                        return;
+                    }
+                    if (item && !item.error && item.downloadUrl) {
+                        const bResp = await fetch(`${serverUrl}${item.downloadUrl}`);
+                        if (!bResp.ok) throw new Error("结果下载失败");
+                        const blob = await bResp.blob();
+                        setItems((prev) =>
+                            prev.map((p) =>
+                                p.id === it.id
+                                    ? {
+                                          ...p,
+                                          compressedBlob: blob,
+                                          compressedSize: item.compressedSize,
+                                          downloadUrl: item.downloadUrl,
+                                          status: "done",
+                                          lastQuality: p.quality,
+                                          chunkUploadId: uploadId,
+                                          chunkProgress: 1
+                                      }
+                                    : p
+                            )
+                        );
+                    } else if (item?.error) {
+                        setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, status: "error", error: mapError(item.error), chunkUploadId: uploadId } : p)));
+                    }
+                } catch (e: any) {
+                    if (e.message === "已取消") {
+                        setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, canceled: true } : p)));
+                    } else {
+                        setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, status: "error", error: e.message, chunkProgress: undefined } : p)));
+                    }
+                }
+            })();
+        });
+    }, [items, serverUrl]);
+
+    // 取消分块上传
+    const cancelChunk = (item: QueueItem) => {
+        setItems((prev) => prev.map((p) => (p.id === item.id ? { ...p, canceled: true } : p)));
+        if (item.chunkAbort) {
+            item.chunkAbort.abort();
+        } else {
+            const controller = new AbortController();
+            controller.abort();
+            setItems((prev) => prev.map((p) => (p.id === item.id ? { ...p, chunkAbort: controller, canceled: true } : p)));
+        }
+    };
+
+    // 恢复分块上传 (断点续传)
+    const resumeChunk = (item: QueueItem) => {
+        const controller = new AbortController();
+        setItems((prev) => prev.map((p) => (p.id === item.id ? { ...p, canceled: false, chunkAbort: controller, status: "compressing" } : p)));
+    };
+
     // --- 删除/清空 ---
     const remove = (id: string) => {
         setItems((prev) => prev.filter((i) => i.id !== id));
@@ -272,6 +372,8 @@ const App: React.FC = () => {
                                 setItems((prev) => prev.map((p) => (p.id === item.id ? { ...p, status: "pending", error: undefined } : p)));
                                 processedRef.current.delete(item.id);
                             }}
+                            onCancelChunk={cancelChunk}
+                            onResumeChunk={resumeChunk}
                         />
                     ))}
                     {!items.length && <div className="empty-hint">暂无图片，拖拽或点击上方区域添加</div>}

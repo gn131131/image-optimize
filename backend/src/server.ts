@@ -42,12 +42,98 @@ app.get("/health", (_req, res) => {
 });
 
 // /api/compress 批量压缩保持输入输出格式一致
-// 限制: 单文件 <=50MB, 总数 <= 30, 总体积 <= 200MB
+// 限制: 单文件 <=50MB, 总数 <= 30, 总体积 <= 200MB (常规表单接口)
 const MAX_FILES = 30;
 const MAX_SINGLE = 50 * 1024 * 1024;
 const MAX_TOTAL = 200 * 1024 * 1024;
 const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp"];
 const upload = multer({ limits: { fileSize: MAX_SINGLE } });
+
+// 分块上传配置（支持大文件绕过单请求限制）
+const CHUNK_MAX_FILE = Number(process.env.CHUNK_MAX_FILE || 800 * 1024 * 1024); // 大文件上限 800MB
+const CHUNK_MAX_SESSION_MEMORY = Number(process.env.CHUNK_MAX_SESSION_MEMORY || 800 * 1024 * 1024); // 所有会话缓存上限
+const CHUNK_SESSION_TTL = Number(process.env.CHUNK_SESSION_TTL || 15 * 60 * 1000); // 15 分钟未活动回收
+const CHUNK_SIZE_LIMIT = Number(process.env.CHUNK_SIZE_LIMIT || 16 * 1024 * 1024); // 单块最大 16MB (客户端可更小)
+
+interface UploadSession {
+    id: string;
+    filename: string;
+    mime: string;
+    totalSize: number;
+    totalChunks: number;
+    receivedBytes: number;
+    chunks: Map<number, Buffer>; // index->data
+    created: number;
+    updated: number;
+    quality?: number;
+    hash?: string; // 客户端可选传摘要，用于去重(未实现逻辑仅占位)
+}
+const UPLOAD_SESSIONS = new Map<string, UploadSession>();
+// hash+quality -> cacheId (压缩结果缓存索引，命中即可秒传)
+const COMPRESSED_HASH_INDEX = new Map<string, string>();
+
+function currentUploadBytes() {
+    let sum = 0;
+    for (const v of UPLOAD_SESSIONS.values()) sum += v.receivedBytes;
+    return sum;
+}
+
+function cleanupUploadSessions() {
+    const now = Date.now();
+    for (const [k, v] of UPLOAD_SESSIONS) {
+        if (now - v.updated > CHUNK_SESSION_TTL) {
+            UPLOAD_SESSIONS.delete(k);
+        }
+    }
+}
+setInterval(cleanupUploadSessions, 60 * 1000).unref();
+
+async function compressBuffer(id: string, originalName: string, mime: string, buffer: Buffer, quality: number, originalHash?: string): Promise<CompressItemResult> {
+    try {
+        if (!ALLOWED_MIME.includes(mime)) return { id, originalName, error: "unsupported_type" };
+        const meta = await sharp(buffer).metadata();
+        const totalPixels = (meta.width || 0) * (meta.height || 0);
+        if (totalPixels > 80_000_000) return { id, originalName, error: "dimensions_too_large" };
+        const MAX_PIXELS = Number(process.env.MAX_PIXELS || 35_000_000);
+        let pipeline = sharp(buffer, { failOn: "warning" });
+        let scaled = false;
+        if (totalPixels > MAX_PIXELS && meta.width && meta.height) {
+            const scale = Math.sqrt(MAX_PIXELS / totalPixels);
+            const targetW = Math.max(1, Math.floor(meta.width * scale));
+            const targetH = Math.max(1, Math.floor(meta.height * scale));
+            pipeline = pipeline.resize({ width: targetW, height: targetH, fit: "inside" });
+            scaled = true;
+        }
+        if (mime.includes("jpeg")) pipeline = pipeline.jpeg({ quality, mozjpeg: true });
+        else if (mime.includes("png")) pipeline = pipeline.png({ quality, compressionLevel: 9, palette: true });
+        else if (mime.includes("webp")) pipeline = pipeline.webp({ quality });
+        const FILE_TIMEOUT_MS = Number(process.env.FILE_TIMEOUT_MS || 30000);
+        const outBuffer = await Promise.race([pipeline.toBuffer(), new Promise<Buffer>((resolve) => setTimeout(() => resolve(Buffer.from([])), FILE_TIMEOUT_MS))]);
+        if (!outBuffer.length) return { id, originalName, error: "timeout" };
+        let finalBuffer = outBuffer;
+        if (!scaled && outBuffer.length >= buffer.length) {
+            finalBuffer = buffer; // 不增大
+        }
+        if (!evictIfNeeded(finalBuffer.length)) return { id, originalName, error: "cache_overflow" };
+        RESULT_CACHE.set(id, { buffer: finalBuffer, mime, filename: originalName, size: finalBuffer.length, created: Date.now() });
+        if (originalHash) {
+            // 记录 hash+quality -> id
+            COMPRESSED_HASH_INDEX.set(`${originalHash}:${quality}`, id);
+        }
+        return {
+            id,
+            originalName,
+            mime,
+            originalSize: buffer.length,
+            compressedSize: finalBuffer.length,
+            width: meta.width,
+            height: meta.height,
+            downloadUrl: `/api/download/${id}`
+        };
+    } catch (e: any) {
+        return { id, originalName, error: e.message || "compress_failed" };
+    }
+}
 
 // 内存缓存: 简易存储压缩结果 (生产可换 Redis / 对象存储)
 interface CacheEntry {
@@ -121,35 +207,10 @@ app.post("/api/compress", upload.array("files"), async (req, res, next) => {
     }
     // 并发限制
     const limit = createLimiter(4); // 可调 4~8
-    const FILE_TIMEOUT_MS = Number(process.env.FILE_TIMEOUT_MS || 30000); // 单文件处理超时 30s
-    const MAX_PIXELS = Number(process.env.MAX_PIXELS || 35_000_000); // 超过则尝试等比缩放（约 35MP）
-
-    function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => T | Promise<T>): Promise<T> {
-        return new Promise((resolve) => {
-            let settled = false;
-            const timer = setTimeout(async () => {
-                if (settled) return;
-                settled = true;
-                resolve(await onTimeout());
-            }, ms);
-            p.then((v) => {
-                if (settled) return;
-                settled = true;
-                clearTimeout(timer);
-                resolve(v);
-            }).catch((e) => {
-                if (settled) return;
-                settled = true;
-                clearTimeout(timer);
-                resolve(onTimeout());
-            });
-        });
-    }
 
     const ID_SEP = "__IDSEP__"; // 与前端协同的 id 分隔符
     const tasks: Promise<CompressItemResult>[] = inputFiles.map((f) =>
         limit(async () => {
-            // 尝试从 multipart filename 中拆出 queueId
             let originalName = f.originalname;
             let embeddedId: string | undefined;
             const sepIndex = originalName.indexOf(ID_SEP);
@@ -157,61 +218,9 @@ app.post("/api/compress", upload.array("files"), async (req, res, next) => {
                 embeddedId = originalName.slice(0, sepIndex);
                 originalName = originalName.slice(sepIndex + ID_SEP.length);
             }
-            const clientId = embeddedId || clientMap[originalName] || crypto.randomUUID(); // 使用嵌入 id -> map -> 随机
-            // 统一再写回 f.originalname 供后续逻辑使用真实文件名
+            const clientId = embeddedId || clientMap[originalName] || crypto.randomUUID();
             (f as any).originalname = originalName;
-            try {
-                if (!ALLOWED_MIME.includes(f.mimetype)) {
-                    return { id: clientId, originalName, error: "unsupported_type" };
-                }
-                const meta = await sharp(f.buffer).metadata();
-                const totalPixels = (meta.width || 0) * (meta.height || 0);
-                if (totalPixels > 80_000_000) {
-                    return { id: clientId, originalName, error: "dimensions_too_large" };
-                }
-                let pipeline = sharp(f.buffer, { failOn: "warning" });
-                let scaled = false;
-                // 超大像素进行等比缩放，使总像素不超过 MAX_PIXELS
-                if (totalPixels > MAX_PIXELS && meta.width && meta.height) {
-                    const scale = Math.sqrt(MAX_PIXELS / totalPixels);
-                    const targetW = Math.max(1, Math.floor(meta.width * scale));
-                    const targetH = Math.max(1, Math.floor(meta.height * scale));
-                    pipeline = pipeline.resize({ width: targetW, height: targetH, fit: "inside" });
-                    scaled = true;
-                }
-                if (f.mimetype.includes("jpeg")) {
-                    pipeline = pipeline.jpeg({ quality, mozjpeg: true });
-                } else if (f.mimetype.includes("png")) {
-                    pipeline = pipeline.png({ quality, compressionLevel: 9, palette: true });
-                } else if (f.mimetype.includes("webp")) {
-                    pipeline = pipeline.webp({ quality });
-                }
-                const outBuffer = await withTimeout(pipeline.toBuffer(), FILE_TIMEOUT_MS, () => Promise.resolve(Buffer.from([])));
-                if (!outBuffer.length) {
-                    return { id: clientId, originalName, error: "timeout" };
-                }
-                // 如果未缩放且压缩后反而变大/不变，则保留原文件，避免用户看到“变大”情况
-                let finalBuffer = outBuffer;
-                if (!scaled && outBuffer.length >= f.size) {
-                    finalBuffer = f.buffer; // 回退到原始
-                }
-                if (!evictIfNeeded(finalBuffer.length)) {
-                    return { id: clientId, originalName, error: "cache_overflow" };
-                }
-                RESULT_CACHE.set(clientId, { buffer: finalBuffer, mime: f.mimetype, filename: originalName, size: finalBuffer.length, created: Date.now() });
-                return {
-                    id: clientId,
-                    originalName,
-                    mime: f.mimetype,
-                    originalSize: f.size,
-                    compressedSize: finalBuffer.length,
-                    width: meta.width,
-                    height: meta.height,
-                    downloadUrl: `/api/download/${clientId}`
-                };
-            } catch (err: any) {
-                return { id: clientId, originalName, error: err.message || "compress_failed" };
-            }
+            return compressBuffer(clientId, originalName, f.mimetype, f.buffer, quality);
         })
     );
     try {
@@ -258,4 +267,119 @@ app.get("/api/download/:id", (req, res) => {
     // 由于同一个 queueId 可能多次重压缩（质量改变覆写缓存），禁用浏览器缓存避免获取旧版本
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
     res.send(entry.buffer);
+});
+
+// --- 分块上传接口 ---
+app.post("/api/upload/init", express.json(), (req, res) => {
+    const { filename, size, mime, totalChunks, quality, hash } = req.body || {};
+    if (!filename || !Number.isFinite(size) || !mime || !Number.isFinite(totalChunks)) {
+        return res.status(400).json({ error: "bad_request" });
+    }
+    if (!ALLOWED_MIME.includes(mime)) return res.status(400).json({ error: "unsupported_type" });
+    if (size > CHUNK_MAX_FILE) return res.status(400).json({ error: "file_too_large" });
+    const q = Math.min(100, Math.max(1, Number(quality) || 70));
+    // 秒传: 若提供 hash 且已有对应质量结果
+    if (hash) {
+        const key = `${hash}:${q}`;
+        const cacheId = COMPRESSED_HASH_INDEX.get(key);
+        if (cacheId) {
+            const entry = RESULT_CACHE.get(cacheId);
+            if (entry) {
+                const instantItem: CompressItemResult = {
+                    id: cacheId,
+                    originalName: filename,
+                    mime: entry.mime,
+                    originalSize: entry.size,
+                    compressedSize: entry.size,
+                    width: undefined,
+                    height: undefined,
+                    downloadUrl: `/api/download/${cacheId}`
+                } as any; // width/height 不存储，客户端可忽略
+                return res.json({ instant: true, uploadId: crypto.randomUUID(), item: instantItem });
+            } else {
+                // 失效 - 移除索引
+                COMPRESSED_HASH_INDEX.delete(key);
+            }
+        }
+    }
+    // 断点续传: 查找是否存在同 hash 未完成会话
+    if (hash) {
+        for (const s of UPLOAD_SESSIONS.values()) {
+            if (s.hash === hash && s.filename === filename && s.totalSize === size && s.mime === mime) {
+                return res.json({
+                    uploadId: s.id,
+                    resume: true,
+                    receivedBytes: s.receivedBytes,
+                    receivedIndices: Array.from(s.chunks.keys())
+                });
+            }
+        }
+    }
+    // 内存占用限制
+    if (currentUploadBytes() + size > CHUNK_MAX_SESSION_MEMORY) return res.status(429).json({ error: "server_busy" });
+    const id = crypto.randomUUID();
+    const now = Date.now();
+    UPLOAD_SESSIONS.set(id, {
+        id,
+        filename,
+        mime,
+        totalSize: size,
+        totalChunks,
+        receivedBytes: 0,
+        chunks: new Map(),
+        created: now,
+        updated: now,
+        quality: q,
+        hash
+    });
+    res.json({ uploadId: id, resume: false, receivedBytes: 0, receivedIndices: [] });
+});
+
+// 复用 multer 但限制单块大小
+const chunkUpload = multer({ limits: { fileSize: CHUNK_SIZE_LIMIT } });
+app.post("/api/upload/chunk", chunkUpload.single("chunk"), (req, res) => {
+    const { uploadId, index } = req.query as Record<string, string>;
+    if (!uploadId || index === undefined) return res.status(400).json({ error: "bad_request" });
+    const session = UPLOAD_SESSIONS.get(uploadId);
+    if (!session) return res.status(404).json({ error: "upload_not_found" });
+    const idx = Number(index);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= session.totalChunks) return res.status(400).json({ error: "bad_index" });
+    // 已存在该 chunk -> 幂等处理
+    if (session.chunks.has(idx)) {
+        return res.json({ received: session.receivedBytes, total: session.totalSize, done: session.chunks.size === session.totalChunks, duplicate: true });
+    }
+    const file = (req as any).file as Express.Multer.File | undefined;
+    if (!file) return res.status(400).json({ error: "no_chunk" });
+    // 累加
+    session.chunks.set(idx, file.buffer);
+    session.receivedBytes += file.size;
+    session.updated = Date.now();
+    if (session.receivedBytes > session.totalSize) {
+        UPLOAD_SESSIONS.delete(uploadId);
+        return res.status(400).json({ error: "upload_size_mismatch" });
+    }
+    res.json({ received: session.receivedBytes, total: session.totalSize, done: session.chunks.size === session.totalChunks });
+});
+
+app.post("/api/upload/complete", async (req, res) => {
+    const { uploadId, quality } = req.query as Record<string, string>;
+    if (!uploadId) return res.status(400).json({ error: "bad_request" });
+    const session = UPLOAD_SESSIONS.get(uploadId);
+    if (!session) return res.status(404).json({ error: "upload_not_found" });
+    if (session.chunks.size !== session.totalChunks || session.receivedBytes !== session.totalSize) {
+        return res.status(400).json({ error: "incomplete_upload" });
+    }
+    // 组装
+    const ordered: Buffer[] = [];
+    for (let i = 0; i < session.totalChunks; i++) {
+        const part = session.chunks.get(i);
+        if (!part) return res.status(400).json({ error: "missing_chunk" });
+        ordered.push(part);
+    }
+    const full = Buffer.concat(ordered);
+    // 释放内存（尽快）
+    UPLOAD_SESSIONS.delete(uploadId);
+    const q = Math.min(100, Math.max(1, Number(quality) || session.quality || 70));
+    const result = await compressBuffer(uploadId, session.filename, session.mime, full, q, session.hash);
+    return res.json({ item: result, quality: q });
 });

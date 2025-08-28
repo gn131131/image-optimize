@@ -11,4 +11,10 @@ export interface QueueItem {
     recompressing?: boolean; // 正在重新压缩但仍展示旧结果以减少闪烁
     status: "pending" | "compressing" | "done" | "error";
     error?: string;
+    // 分块上传相关（大文件时使用）
+    chunkUploadId?: string; // 服务端 uploadId
+    chunkProgress?: number; // 0-1 上传进度
+    isChunked?: boolean; // 是否走分块流程
+    chunkAbort?: AbortController; // 当前分块上传控制器
+    canceled?: boolean; // 用户取消
 }

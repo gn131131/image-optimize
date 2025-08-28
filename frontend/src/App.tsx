@@ -113,65 +113,103 @@ const App: React.FC = () => {
             setItems((prev) =>
                 prev.map((i) => {
                     if (!targetIds.has(i.id)) return i;
-                    // 重新压缩且已有结果: 保留原图显示不改 compressed 状态, 只标记 recompressing
                     if (i.recompressing && i.compressedBlob) return { ...i, error: undefined };
-                    return { ...i, status: "compressing", error: undefined };
+                    return { ...i, status: "compressing", error: undefined, progress: 0 };
                 })
             );
+            // 构造 formData
             const form = new FormData();
             const ID_SEP = "__IDSEP__";
             targets.forEach((t) => form.append("files", t.file, `${t.id}${ID_SEP}${t.file.name}`));
             const clientMap: Record<string, string> = {};
             targets.forEach((t) => (clientMap[t.file.name] = t.id));
             form.append("clientMap", JSON.stringify(clientMap));
-            const url = `${serverUrl}/api/compress?quality=${q}`.replace(/\/\/api/, "/api"); // 防止出现 //api
+            const url = `${serverUrl}/api/compress?quality=${q}`.replace(/\/\/api/, "/api");
+            // 采用 XHR 以获取上传进度
             if (sendAbortRef.current) sendAbortRef.current.abort();
-            const controller = new AbortController();
-            sendAbortRef.current = controller;
+            const abortController = new AbortController();
+            sendAbortRef.current = abortController;
+            const totalSize = targets.reduce((s, f) => s + f.file.size, 0);
+            const sizePrefix: { id: string; start: number; end: number }[] = [];
+            let acc = 0;
+            for (const t of targets) {
+                const start = acc;
+                acc += t.file.size;
+                sizePrefix.push({ id: t.id, start, end: acc });
+            }
             try {
-                const resp = await fetch(url, { method: "POST", body: form, signal: controller.signal });
-                if (!resp.ok) {
-                    let errText = `服务器响应 ${resp.status}`;
-                    try {
-                        const js = await resp.json();
-                        if (js?.error) errText = mapError(js.error);
-                    } catch {}
-                    throw new Error(errText);
-                }
-                const data = await resp.json();
+                const respJson = await new Promise<any>((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open("POST", url, true);
+                    xhr.responseType = "json";
+                    xhr.upload.onprogress = (e) => {
+                        if (!e.lengthComputable) return;
+                        const loaded = e.loaded;
+                        // 按文件区间估算各自进度
+                        setItems((prev) =>
+                            prev.map((p) => {
+                                if (!targetIds.has(p.id)) return p;
+                                const seg = sizePrefix.find((s) => s.id === p.id)!;
+                                if (!seg) return p;
+                                const segLoaded = Math.min(Math.max(0, loaded - seg.start), seg.end - seg.start);
+                                const segPct = Math.min(1, segLoaded / (seg.end - seg.start));
+                                return { ...p, progress: segPct };
+                            })
+                        );
+                    };
+                    xhr.onerror = () => reject(new Error("网络错误"));
+                    xhr.onabort = () => reject(new Error("已取消"));
+                    xhr.onload = () => {
+                        if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response);
+                        else reject(new Error(`服务器响应 ${xhr.status}`));
+                    };
+                    abortController.signal.addEventListener("abort", () => {
+                        try {
+                            xhr.abort();
+                        } catch {}
+                    });
+                    xhr.send(form);
+                });
+                const data = respJson;
                 const map: Record<string, any> = {};
                 const nameMap: Record<string, any> = {};
                 (data.items || []).forEach((it: any) => {
                     map[it.id] = it;
                     nameMap[it.originalName] = it;
                 });
-                // 先更新元数据（不替换 blob）
+                // 先更新元数据
                 setItems((prev) =>
                     prev.map((i) => {
+                        if (!targetIds.has(i.id)) return i;
                         const hit = map[i.id] || nameMap[i.file.name];
                         if (!hit) return i;
-                        if (hit.error) return { ...i, status: "error", error: hit.error, recompressing: false };
-                        return { ...i, compressedSize: hit.compressedSize, downloadUrl: hit.downloadUrl, status: i.compressedBlob ? "done" : "done" };
+                        if (hit.error) return { ...i, status: "error", error: hit.error, recompressing: false, progress: undefined };
+                        return {
+                            ...i,
+                            compressedSize: hit.compressedSize,
+                            downloadUrl: hit.downloadUrl,
+                            status: i.compressedBlob ? "done" : "done",
+                            progress: 1
+                        };
                     })
                 );
-                // 下载新 blob
+                // 下载 blob
                 const ts = Date.now();
                 (data.items || []).forEach(async (hit: any) => {
                     if (hit.error) return;
                     try {
-                        const bResp = await fetch(`${serverUrl}${hit.downloadUrl}?t=${ts}`, { signal: controller.signal });
+                        const bResp = await fetch(`${serverUrl}${hit.downloadUrl}?t=${ts}`);
                         if (!bResp.ok) throw new Error("下载失败");
                         const blob = await bResp.blob();
-                        setItems((prev) => prev.map((i) => (i.id === hit.id ? { ...i, compressedBlob: blob, lastQuality: i.quality, recompressing: false, status: "done" } : i)));
+                        setItems((prev) => prev.map((i) => (i.id === hit.id ? { ...i, compressedBlob: blob, lastQuality: i.quality, recompressing: false, status: "done", progress: 1 } : i)));
                     } catch (err: any) {
-                        if (controller.signal.aborted) return;
                         setItems((prev) => prev.map((i) => (i.id === hit.id ? { ...i, status: "error", error: err.message, recompressing: false } : i)));
                     }
                 });
             } catch (e: any) {
-                if ((e as any).name === "AbortError") return; // 忽略取消
-                showMsg((e as any).message || "上传失败");
-                setItems((prev) => prev.map((i) => (targetIds.has(i.id) ? { ...i, status: "error", error: (e as any).message, recompressing: false } : i)));
+                if (e.message === "已取消") return;
+                showMsg(e.message || "上传失败");
+                setItems((prev) => prev.map((i) => (targetIds.has(i.id) ? { ...i, status: "error", error: e.message, recompressing: false, progress: undefined } : i)));
             } finally {
                 setBatching(false);
             }

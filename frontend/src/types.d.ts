@@ -19,4 +19,6 @@ export interface QueueItem {
     canceled?: boolean; // 用户取消
     phase?: "hash" | "upload" | "compress" | "download" | "done" | "canceled" | "error"; // 细化阶段
     uploadPercent?: number; // 上传阶段百分比 (0-100)
+    // 普通批量上传的整体进度 (0-1)，与分块 chunkProgress 区分；UI 统一显示任一存在的值
+    progress?: number;
 }

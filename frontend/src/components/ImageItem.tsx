@@ -53,10 +53,40 @@ const ImageItem: React.FC<Props> = ({ item, selected, onSelect, onRemove, onDown
                         {item.lastQuality === 100 || item.quality === 100 ? "原图" : `Q:${item.quality}`}
                     </span>
                 </div>
-                {/* 分块上传进度 */}
-                {item.isChunked && item.status === "compressing" && typeof item.chunkProgress === "number" && item.chunkProgress < 1 && (
-                    <div style={{ height: 4, background: "#2b2f36", borderRadius: 2, overflow: "hidden" }}>
-                        <div style={{ width: `${(item.chunkProgress * 100).toFixed(1)}%`, background: "#1d6fd9", height: "100%", transition: "width .25s linear" }} />
+                {/* 上传进度条（分块或普通） */}
+                {((item.isChunked && item.status === "compressing" && typeof item.chunkProgress === "number" && item.chunkProgress < 1) ||
+                    (!item.isChunked && item.status === "compressing" && typeof item.progress === "number" && item.progress < 1)) && (
+                    <div style={{ position: "relative", width: "100%", background: "#20242a", borderRadius: 4, overflow: "hidden", height: 18, boxShadow: "0 0 0 1px #30363d inset" }}>
+                        <div
+                            style={{
+                                position: "absolute",
+                                inset: 0,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: ".62rem",
+                                fontWeight: 500,
+                                letterSpacing: ".5px",
+                                color: "#fff",
+                                mixBlendMode: "plus-lighter",
+                                pointerEvents: "none"
+                            }}
+                        >
+                            {(() => {
+                                const phaseMap: Record<string, string> = { hash: "计算哈希", upload: "上传", compress: "压缩", download: "下载" };
+                                const currentPct = item.isChunked ? item.uploadPercent ?? Math.round((item.chunkProgress || 0) * 100) : Math.round((item.progress || 0) * 100);
+                                const phaseLabel = item.isChunked ? phaseMap[item.phase || "upload"] || item.phase || "" : "上传";
+                                return `${phaseLabel} ${currentPct}%`;
+                            })()}
+                        </div>
+                        <div
+                            style={{
+                                width: `${(item.isChunked ? item.chunkProgress || 0 : item.progress || 0) * 100}%`,
+                                background: "linear-gradient(90deg,#1d6fd9,#3d8bff)",
+                                height: "100%",
+                                transition: "width .25s cubic-bezier(.4,.0,.2,1)"
+                            }}
+                        />
                     </div>
                 )}
                 {item.error && <div style={{ color: "#ff6b6b", fontSize: ".68rem" }}>{item.error}</div>}

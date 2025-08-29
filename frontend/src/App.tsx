@@ -101,6 +101,23 @@ const App: React.FC = () => {
                                 合计原始: {formatBytes(items.reduce((a, b) => a + b.originalSize, 0))} / 压缩后: {formatBytes(items.reduce((a, b) => a + (b.compressedSize || 0), 0))}
                             </span>
                         </div>
+                        {selectedItem && selectedItem.status === "done" && (
+                            <div className="file-info-panel flat" style={{ marginTop: ".65rem", marginBottom: ".4rem" }}>
+                                <div className="fip-row">
+                                    <span className="fip-name" title={selectedItem.file.name}>
+                                        {selectedItem.file.name}
+                                    </span>
+                                </div>
+                                {selectedItem.compressedSize && (
+                                    <div className="fip-row sizes">
+                                        <span className="fip-size-orig">{formatBytes(selectedItem.originalSize)}</span>
+                                        <span className="fip-arrow">→</span>
+                                        <span className="fip-size-comp">{formatBytes(selectedItem.compressedSize)}</span>
+                                        <span className="fip-ratio">{((selectedItem.compressedSize / selectedItem.originalSize) * 100).toFixed(1)}%</span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         <ThumbCarousel
                             items={items}
                             selectedId={selectedId || undefined}

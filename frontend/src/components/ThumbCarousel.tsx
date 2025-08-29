@@ -89,10 +89,15 @@ const ThumbCarousel: React.FC<ThumbCarouselProps> = ({ items, selectedId, onSele
                 <div className="thumb-track" ref={trackRef}>
                     {items.map((it) => {
                         const selected = it.id === selectedId;
+                        const done = it.status === "done";
+                        const classNames = ["thumb-card"];
+                        if (selected) classNames.push("selected");
+                        if (done) classNames.push("done");
+                        if (done && !selected) classNames.push("inactive");
                         return (
                             <div
                                 key={it.id}
-                                className={"thumb-card" + (selected ? " selected" : "")}
+                                className={classNames.join(" ")}
                                 onClick={() => onSelect(it)}
                                 role="button"
                                 tabIndex={0}
@@ -105,13 +110,13 @@ const ThumbCarousel: React.FC<ThumbCarouselProps> = ({ items, selectedId, onSele
                             >
                                 <div className="thumb-inner">
                                     <img src={it.originalDataUrl} alt={it.file.name} draggable={false} />
-                                    {it.status === "done" && <div className="thumb-ratio-fade">{renderRatio(it)}</div>}
+                                    {done && <div className="thumb-ratio-fade">{renderRatio(it)}</div>}
                                     {renderProgressOverlay(it)}
-                                    {/* 居中放大的下载按钮，仅完成时显示 */}
-                                    {it.compressedBlob && it.status === "done" && (
+                                    {done && !selected && <div className="thumb-inactive-blur" />}
+                                    {it.compressedBlob && done && (
                                         <div className="thumb-center-download" onClick={(e) => e.stopPropagation()}>
-                                            <button className="center-dl-btn" title="下载" onClick={() => downloadSingle(it)}>
-                                                下载
+                                            <button className="center-dl-btn" title="下载" aria-label="下载" onClick={() => downloadSingle(it)}>
+                                                ⬇
                                             </button>
                                         </div>
                                     )}

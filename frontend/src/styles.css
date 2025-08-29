@@ -118,7 +118,42 @@ header {
     overflow: hidden;
 }
 .thumb-card.selected {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent), 0 4px 10px -4px rgba(0, 0, 0, 0.6);
+    box-shadow: none;
+    outline: none;
+}
+.thumb-card.done.inactive .thumb-ratio-fade {
+    opacity: 0;
+}
+.thumb-inactive-blur {
+    position: absolute;
+    inset: 0;
+    backdrop-filter: blur(4px) brightness(0.85);
+    -webkit-backdrop-filter: blur(4px) brightness(0.85);
+    background: rgba(0, 0, 0, 0.35);
+    transition: opacity 0.25s;
+    pointer-events: none;
+    z-index: 12;
+}
+.thumb-card.done:hover .thumb-inactive-blur {
+    opacity: 0;
+}
+.thumb-center-download {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.25s;
+}
+.thumb-card.done:hover .thumb-center-download {
+    opacity: 1;
+    visibility: visible;
+}
+.center-dl-btn {
+    padding: 0.55rem 0.75rem;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    width: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 .thumb-card img {
     width: 100%;
@@ -308,6 +343,47 @@ header {
     z-index: 30; /* 在进度环之上，但低于操作按钮 */
     backdrop-filter: blur(3px) saturate(1.15);
     -webkit-backdrop-filter: blur(3px) saturate(1.15);
+}
+/* File info flat variant */
+.file-info-panel.flat {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0 0.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 0.72rem;
+}
+.file-info-panel.flat .fip-row {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+}
+.fip-name {
+    font-weight: 600;
+    max-width: 50ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.75rem;
+}
+.fip-row.sizes {
+    font-weight: 500;
+    letter-spacing: 0.3px;
+}
+.fip-size-orig,
+.fip-size-comp {
+    font-variant-numeric: tabular-nums;
+}
+.fip-arrow {
+    opacity: 0.6;
+}
+.fip-ratio {
+    font-size: 0.7rem;
+    opacity: 0.65;
+    font-weight: 500;
 }
 .thumb-focus-ring {
     position: absolute;

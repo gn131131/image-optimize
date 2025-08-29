@@ -53,6 +53,7 @@ const App: React.FC = () => {
         }
         return "http://localhost:3001"; // 开发默认
     });
+    // 是否存在正在处理的任务（普通文件单独上传/分块上传/重新压缩）
     const [batching, setBatching] = useState(false);
     const [message, setMessage] = useState<string | null>(null);
     const showMsg = useCallback((m: string) => {
@@ -120,117 +121,71 @@ const App: React.FC = () => {
     );
 
     // --- 发送压缩请求 ---
-    const sendAbortRef = useRef<AbortController | null>(null);
-    const sendToServer = useCallback(
-        async (targets: QueueItem[], q: number) => {
-            if (!targets.length) return;
-            setBatching(true);
-            const targetIds = new Set(targets.map((t) => t.id));
-            setItems((prev) =>
-                prev.map((i) => {
-                    if (!targetIds.has(i.id)) return i;
-                    if (i.recompressing && i.compressedBlob) return { ...i, error: undefined };
-                    return { ...i, status: "compressing", error: undefined, progress: 0, phase: "upload" };
-                })
-            );
-            // 构造 formData
-            const form = new FormData();
+    // 单文件上传并压缩（非分块）
+    const activeUploadsRef = useRef(0);
+    const sendSingleFile = useCallback(
+        async (target: QueueItem, quality: number) => {
+            setItems((prev) => prev.map((i) => (i.id === target.id ? { ...i, status: "compressing", error: undefined, progress: 0, phase: "upload" } : i)));
             const ID_SEP = "__IDSEP__";
-            targets.forEach((t) => form.append("files", t.file, `${t.id}${ID_SEP}${t.file.name}`));
-            const clientMap: Record<string, string> = {};
-            targets.forEach((t) => (clientMap[t.file.name] = t.id));
-            form.append("clientMap", JSON.stringify(clientMap));
-            const url = `${serverUrl}/api/compress?quality=${q}`.replace(/\/\/api/, "/api");
-            // 采用 XHR 以获取上传进度
-            if (sendAbortRef.current) sendAbortRef.current.abort();
-            const abortController = new AbortController();
-            sendAbortRef.current = abortController;
-            const totalSize = targets.reduce((s, f) => s + f.file.size, 0);
-            const sizePrefix: { id: string; start: number; end: number }[] = [];
-            let acc = 0;
-            for (const t of targets) {
-                const start = acc;
-                acc += t.file.size;
-                sizePrefix.push({ id: t.id, start, end: acc });
-            }
+            const form = new FormData();
+            form.append("files", target.file, `${target.id}${ID_SEP}${target.file.name}`);
+            form.append("clientMap", JSON.stringify({ [target.file.name]: target.id }));
+            const url = `${serverUrl}/api/compress?quality=${quality}`.replace(/\/\/api/, "/api");
+            activeUploadsRef.current++;
+            setBatching(true);
             try {
-                const respJson = await new Promise<any>((resolve, reject) => {
+                const respJson: any = await new Promise((resolve, reject) => {
                     const xhr = new XMLHttpRequest();
                     xhr.open("POST", url, true);
                     xhr.responseType = "json";
                     xhr.upload.onprogress = (e) => {
                         if (!e.lengthComputable) return;
-                        const loaded = e.loaded;
-                        // 按文件区间估算各自进度
-                        setItems((prev) =>
-                            prev.map((p) => {
-                                if (!targetIds.has(p.id)) return p;
-                                const seg = sizePrefix.find((s) => s.id === p.id)!; // 一定存在
-                                const segLoaded = Math.min(Math.max(0, loaded - seg.start), seg.end - seg.start);
-                                const segPct = Math.min(1, segLoaded / (seg.end - seg.start));
-                                const phase = loaded >= totalSize ? "compress" : "upload";
-                                return { ...p, progress: segPct, phase };
-                            })
-                        );
+                        const pct = e.total ? e.loaded / e.total : 0;
+                        setItems((prev) => prev.map((p) => (p.id === target.id ? { ...p, progress: pct, phase: pct >= 1 ? "compress" : "upload" } : p)));
                     };
                     xhr.onerror = () => reject(new Error("网络错误"));
-                    xhr.onabort = () => reject(new Error("已取消"));
                     xhr.onload = () => {
                         if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response);
                         else reject(new Error(`服务器响应 ${xhr.status}`));
                     };
-                    abortController.signal.addEventListener("abort", () => {
-                        try {
-                            xhr.abort();
-                        } catch {}
-                    });
                     xhr.send(form);
                 });
-                const data = respJson;
-                const map: Record<string, any> = {};
-                const nameMap: Record<string, any> = {};
-                (data.items || []).forEach((it: any) => {
-                    map[it.id] = it;
-                    nameMap[it.originalName] = it;
-                });
-                // 先更新元数据
+                const dataItem = (respJson.items && respJson.items[0]) || undefined;
+                if (!dataItem) throw new Error("响应无结果");
+                if (dataItem.error) {
+                    setItems((prev) => prev.map((i) => (i.id === target.id ? { ...i, status: "error", error: mapError(dataItem.error), progress: undefined, phase: "error" } : i)));
+                    return;
+                }
                 setItems((prev) =>
-                    prev.map((i) => {
-                        if (!targetIds.has(i.id)) return i;
-                        const hit = map[i.id] || nameMap[i.file.name];
-                        if (!hit) return i;
-                        if (hit.error) return { ...i, status: "error", error: hit.error, recompressing: false, progress: undefined, phase: "error" };
-                        return {
-                            ...i,
-                            compressedSize: hit.compressedSize,
-                            downloadUrl: hit.downloadUrl,
-                            status: i.compressedBlob ? "done" : "compressing",
-                            progress: 1,
-                            phase: "download"
-                        };
-                    })
+                    prev.map((i) =>
+                        i.id === target.id
+                            ? {
+                                  ...i,
+                                  compressedSize: dataItem.compressedSize,
+                                  downloadUrl: dataItem.downloadUrl,
+                                  progress: 1,
+                                  phase: "download"
+                              }
+                            : i
+                    )
                 );
-                // 下载 blob
-                const ts = Date.now();
-                (data.items || []).forEach(async (hit: any) => {
-                    if (hit.error) return;
-                    try {
-                        const bResp = await fetch(`${serverUrl}${hit.downloadUrl}?t=${ts}`);
-                        if (!bResp.ok) throw new Error("下载失败");
-                        const blob = await bResp.blob();
-                        setItems((prev) =>
-                            prev.map((i) => (i.id === hit.id ? { ...i, compressedBlob: blob, lastQuality: i.quality, recompressing: false, status: "done", progress: 1, phase: "done" } : i))
-                        );
-                    } catch (err: any) {
-                        setItems((prev) => prev.map((i) => (i.id === hit.id ? { ...i, status: "error", error: err.message, recompressing: false, phase: "error" } : i)));
-                    }
-                });
+                // 下载
+                try {
+                    const bResp = await fetch(`${serverUrl}${dataItem.downloadUrl}?t=${Date.now()}`);
+                    if (!bResp.ok) throw new Error("下载失败");
+                    const blob = await bResp.blob();
+                    setItems((prev) =>
+                        prev.map((i) => (i.id === target.id ? { ...i, compressedBlob: blob, lastQuality: i.quality, recompressing: false, status: "done", phase: "done", progress: 1 } : i))
+                    );
+                } catch (err: any) {
+                    setItems((prev) => prev.map((i) => (i.id === target.id ? { ...i, status: "error", error: err.message, phase: "error" } : i)));
+                }
             } catch (e: any) {
-                if (e.message === "已取消") return;
                 showMsg(e.message || "上传失败");
-                setItems((prev) => prev.map((i) => (targetIds.has(i.id) ? { ...i, status: "error", error: e.message, recompressing: false, progress: undefined, phase: "error" } : i)));
+                setItems((prev) => prev.map((i) => (i.id === target.id ? { ...i, status: "error", error: e.message, progress: undefined, phase: "error" } : i)));
             } finally {
-                setBatching(false);
+                activeUploadsRef.current--;
+                if (activeUploadsRef.current <= 0) setBatching(false);
             }
         },
         [serverUrl, showMsg]
@@ -238,18 +193,15 @@ const App: React.FC = () => {
 
     // --- 处理新 pending 项批量发送 ---
     const processedRef = useRef<Set<string>>(new Set());
+    // 监控待处理普通文件: 逐文件上传压缩
     useEffect(() => {
-        const pendings = items.filter((i) => i.status === "pending" && !processedRef.current.has(i.id));
+        const pendings = items.filter((i) => i.status === "pending" && !i.isChunked && !processedRef.current.has(i.id));
         if (!pendings.length) return;
-        pendings.forEach((p) => processedRef.current.add(p.id));
-        const groups = new Map<number, QueueItem[]>();
         pendings.forEach((p) => {
-            const g = groups.get(p.quality) || [];
-            g.push(p);
-            groups.set(p.quality, g);
+            processedRef.current.add(p.id);
+            sendSingleFile(p, p.quality);
         });
-        groups.forEach((group, q) => sendToServer(group, q));
-    }, [items, sendToServer]);
+    }, [items, sendSingleFile]);
 
     // 监听需要分块的文件并启动上传
     useEffect(() => {
@@ -396,7 +348,7 @@ const App: React.FC = () => {
         if (!compare) return;
         setItems((prev) => prev.map((p) => (p.id === compare.id ? { ...p, recompressing: true } : p)));
         const target = items.find((i) => i.id === compare.id);
-        if (target) sendToServer([{ ...target, recompressing: true }], target.quality);
+        if (target) sendSingleFile({ ...target, recompressing: true }, target.quality);
     };
 
     return (

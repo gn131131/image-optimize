@@ -184,7 +184,7 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
                 pollingIntervalRef.current = null;
             }
         };
-    }, [serverUrl]);
+    }, [serverUrl, items]);
 
     // 下载阶段: 获取最终文件并标记完成
     useEffect(() => {

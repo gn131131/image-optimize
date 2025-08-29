@@ -138,7 +138,7 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
             if (now - lastPollRef.current < ACTIVE_POLL_INTERVAL) return;
             lastPollRef.current = now;
             const snapshot = itemsRef.current;
-            const activeJobs = snapshot.filter((i) => i.jobId && i.phase !== "done" && i.phase !== "error");
+            const activeJobs = snapshot.filter((i) => i.jobId && i.phase === "compress");
             if (!activeJobs.length) {
                 if (pollingIntervalRef.current) {
                     clearInterval(pollingIntervalRef.current);
@@ -159,10 +159,10 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
                         if (!it.jobId) return it;
                         const rec = list.find((r) => r.jobId === it.jobId);
                         if (!rec) return it;
-                        if (rec.error) return { ...it, status: "error", error: mapError(rec.error), phase: "error", compressionProgress: 1 };
+                        if (rec.error) return { ...it, status: "error", error: mapError(rec.error), phase: "error", compressionProgress: 1, jobId: undefined };
                         const phase = rec.phase as string;
                         if (phase === "done" && rec.downloadUrl) {
-                            return { ...it, phase: "download", compressionProgress: 1, compressedSize: rec.compressedSize, downloadUrl: rec.downloadUrl };
+                            return { ...it, phase: "download", compressionProgress: 1, compressedSize: rec.compressedSize, downloadUrl: rec.downloadUrl, jobId: undefined };
                         }
                         const prog = typeof rec.progress === "number" ? rec.progress : phaseMap[phase] ?? 0;
                         return { ...it, phase: "compress", compressionProgress: prog };
@@ -172,7 +172,7 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
         };
         if (!pollingIntervalRef.current) {
             // 判断当前是否需要开启
-            const initialActive = itemsRef.current.some((i) => i.jobId && i.phase !== "done" && i.phase !== "error");
+            const initialActive = itemsRef.current.some((i) => i.jobId && i.phase === "compress");
             if (initialActive) {
                 pollingIntervalRef.current = window.setInterval(tick, ACTIVE_POLL_INTERVAL);
                 tick();

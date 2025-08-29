@@ -286,6 +286,25 @@ button:hover:not(:disabled) {
         transform: translateX(100%);
     }
 }
+@keyframes mini-slide {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(100%);
+    }
+}
+@keyframes pulse {
+    0%,
+    100% {
+        transform: scale(0.85);
+        opacity: 0.9;
+    }
+    50% {
+        transform: scale(1.1);
+        opacity: 1;
+    }
+}
 .compare-wrapper::before {
     content: "";
     position: absolute;

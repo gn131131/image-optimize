@@ -114,7 +114,7 @@ const App: React.FC = () => {
                 prev.map((i) => {
                     if (!targetIds.has(i.id)) return i;
                     if (i.recompressing && i.compressedBlob) return { ...i, error: undefined };
-                    return { ...i, status: "compressing", error: undefined, progress: 0 };
+                    return { ...i, status: "compressing", error: undefined, progress: 0, phase: "upload" };
                 })
             );
             // 构造 formData
@@ -153,7 +153,8 @@ const App: React.FC = () => {
                                 if (!seg) return p;
                                 const segLoaded = Math.min(Math.max(0, loaded - seg.start), seg.end - seg.start);
                                 const segPct = Math.min(1, segLoaded / (seg.end - seg.start));
-                                return { ...p, progress: segPct };
+                                const phase = loaded >= totalSize ? "compress" : "upload";
+                                return { ...p, progress: segPct, phase };
                             })
                         );
                     };
@@ -183,13 +184,14 @@ const App: React.FC = () => {
                         if (!targetIds.has(i.id)) return i;
                         const hit = map[i.id] || nameMap[i.file.name];
                         if (!hit) return i;
-                        if (hit.error) return { ...i, status: "error", error: hit.error, recompressing: false, progress: undefined };
+                        if (hit.error) return { ...i, status: "error", error: hit.error, recompressing: false, progress: undefined, phase: "error" };
                         return {
                             ...i,
                             compressedSize: hit.compressedSize,
                             downloadUrl: hit.downloadUrl,
-                            status: i.compressedBlob ? "done" : "done",
-                            progress: 1
+                            status: i.compressedBlob ? "done" : "compressing",
+                            progress: 1,
+                            phase: "download"
                         };
                     })
                 );
@@ -201,9 +203,11 @@ const App: React.FC = () => {
                         const bResp = await fetch(`${serverUrl}${hit.downloadUrl}?t=${ts}`);
                         if (!bResp.ok) throw new Error("下载失败");
                         const blob = await bResp.blob();
-                        setItems((prev) => prev.map((i) => (i.id === hit.id ? { ...i, compressedBlob: blob, lastQuality: i.quality, recompressing: false, status: "done", progress: 1 } : i)));
+                        setItems((prev) =>
+                            prev.map((i) => (i.id === hit.id ? { ...i, compressedBlob: blob, lastQuality: i.quality, recompressing: false, status: "done", progress: 1, phase: "done" } : i))
+                        );
                     } catch (err: any) {
-                        setItems((prev) => prev.map((i) => (i.id === hit.id ? { ...i, status: "error", error: err.message, recompressing: false } : i)));
+                        setItems((prev) => prev.map((i) => (i.id === hit.id ? { ...i, status: "error", error: err.message, recompressing: false, phase: "error" } : i)));
                     }
                 });
             } catch (e: any) {
@@ -254,16 +258,16 @@ const App: React.FC = () => {
                         signal: it.chunkAbort?.signal,
                         onProgress: (loaded, total) => {
                             setItems((prev) =>
-                                prev.map((p) =>
-                                    p.id === it.id
-                                        ? {
-                                              ...p,
-                                              chunkProgress: loaded / total,
-                                              phase: "upload",
-                                              uploadPercent: Math.round((loaded / total) * 100)
-                                          }
-                                        : p
-                                )
+                                prev.map((p) => {
+                                    if (p.id !== it.id) return p;
+                                    const doneUpload = loaded >= total;
+                                    return {
+                                        ...p,
+                                        chunkProgress: loaded / total,
+                                        phase: doneUpload ? "compress" : "upload",
+                                        uploadPercent: Math.round((loaded / total) * 100)
+                                    };
+                                })
                             );
                         }
                     });
@@ -436,7 +440,7 @@ const App: React.FC = () => {
                     <button className="danger" onClick={clearAll} disabled={!items.length}>
                         清空队列
                     </button>
-                    {batching && <span style={{ fontSize: ".7rem", color: "#4ea1ff" }}>压缩中...</span>}
+                    {/* 取消全局压缩中提示，采用每文件进度+动画显示 */}
                     {items.length > 0 && (
                         <span style={{ fontSize: ".78rem", opacity: 0.75 }}>
                             合计原始: {formatBytes(items.reduce((a, b) => a + b.originalSize, 0))} / 压缩后: {formatBytes(items.reduce((a, b) => a + (b.compressedSize || 0), 0))}

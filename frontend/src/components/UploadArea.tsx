@@ -70,7 +70,6 @@ const UploadArea: React.FC<Props> = ({ onFiles, disabled, onRejectInfo }) => {
                 <div style={{ fontSize: "0.7rem", lineHeight: 1.5, opacity: 0.78, textAlign: "center" }}>
                     <div>格式: JPG / PNG / WebP</div>
                     <div>单文件 ≤ 50MB · 总大小 ≤ 200MB · 最多 30 张</div>
-                    <div style={{ opacity: 0.6 }}>即时压缩处理，不做持久存储</div>
                 </div>
             </div>
         </div>

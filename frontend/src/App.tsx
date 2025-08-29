@@ -482,27 +482,7 @@ const App: React.FC = () => {
                                     </div>
                                 </>
                             ) : (
-                                <div className="compare-wrapper empty">
-                                    <div className="ph-illu" aria-hidden="true">
-                                        <svg width="150" height="110" viewBox="0 0 300 220" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <defs>
-                                                <linearGradient id="phg1" x1="0" y1="0" x2="300" y2="220" gradientUnits="userSpaceOnUse">
-                                                    <stop stopColor="var(--accent)" stopOpacity="0.55" />
-                                                    <stop offset="1" stopColor="var(--accent-strong)" stopOpacity="0.2" />
-                                                </linearGradient>
-                                                <linearGradient id="phg2" x1="80" y1="60" x2="220" y2="180" gradientUnits="userSpaceOnUse">
-                                                    <stop stopColor="#ffffff" stopOpacity="0.85" />
-                                                    <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
-                                                </linearGradient>
-                                            </defs>
-                                            <rect x="28" y="34" width="244" height="152" rx="26" fill="url(#phg1)" opacity="0.22" />
-                                            <rect x="54" y="58" width="192" height="104" rx="18" stroke="var(--accent)" strokeDasharray="6 10" strokeWidth="4" opacity="0.35" />
-                                            <path d="M90 146l40-44 34 34 44-58 36 68" stroke="var(--accent)" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" opacity="0.55" />
-                                            <circle cx="140" cy="94" r="18" fill="url(#phg2)" opacity="0.65" />
-                                        </svg>
-                                    </div>
-                                    <div className="ph-text">拖拽或添加图片以开始对比</div>
-                                </div>
+                                <div className="compare-wrapper empty" />
                             )}
                         </div>
                     </div>

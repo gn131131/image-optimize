@@ -35,6 +35,11 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
     const pollingIntervalRef = useRef<number | null>(null);
     const lastPollRef = useRef<number>(0);
     const ACTIVE_POLL_INTERVAL = 700; // ms 节流
+    // 最新 items 引用，避免轮询闭包过期
+    const itemsRef = useRef<QueueItem[]>(items);
+    useEffect(() => {
+        itemsRef.current = items;
+    }, [items]);
 
     const addFiles = useCallback(
         async (files: File[]) => {
@@ -112,8 +117,7 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
                 if (!respJson || !respJson.items || !respJson.items.length) throw new Error("响应无结果");
                 const jobInfo = respJson.items.find((it: any) => it.id === target.id) || respJson.items[0];
                 if (!jobInfo || !jobInfo.jobId) throw new Error("缺少 jobId");
-                // 进入真实 compress 阶段并开始轮询
-                setItems((prev) => prev.map((i) => (i.id === target.id ? ({ ...i, phase: "compress", compressionProgress: 0.05, jobId: jobInfo.jobId } as any) : i)));
+                // 进入真实 compress 阶段（进度由批量轮询更新）
                 setItems((prev) => prev.map((i) => (i.id === target.id ? ({ ...i, phase: "compress", compressionProgress: 0, jobId: jobInfo.jobId } as any) : i)));
             } catch (e: any) {
                 showMsg(e.message || "上传失败");
@@ -128,19 +132,20 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
 
     // 批量轮询 job 进度
     useEffect(() => {
-        const activeJobs = items.filter((i) => i.jobId && i.phase !== "done" && i.phase !== "error");
-        if (!activeJobs.length) {
-            if (pollingIntervalRef.current) {
-                clearInterval(pollingIntervalRef.current);
-                pollingIntervalRef.current = null;
-            }
-            return;
-        }
         const phaseMap: Record<string, number> = { queued: 0, decoding: 0.05, resizing: 0.25, encoding: 0.6, finalizing: 0.9, done: 1 };
         const tick = async () => {
             const now = Date.now();
-            if (now - lastPollRef.current < ACTIVE_POLL_INTERVAL) return; // 简单节流
+            if (now - lastPollRef.current < ACTIVE_POLL_INTERVAL) return;
             lastPollRef.current = now;
+            const snapshot = itemsRef.current;
+            const activeJobs = snapshot.filter((i) => i.jobId && i.phase !== "done" && i.phase !== "error");
+            if (!activeJobs.length) {
+                if (pollingIntervalRef.current) {
+                    clearInterval(pollingIntervalRef.current);
+                    pollingIntervalRef.current = null;
+                }
+                return;
+            }
             try {
                 const ids = Array.from(new Set(activeJobs.map((j) => j.jobId!))).join(",");
                 if (!ids) return;
@@ -166,10 +171,20 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
             } catch {}
         };
         if (!pollingIntervalRef.current) {
-            pollingIntervalRef.current = window.setInterval(tick, ACTIVE_POLL_INTERVAL);
-            tick();
+            // 判断当前是否需要开启
+            const initialActive = itemsRef.current.some((i) => i.jobId && i.phase !== "done" && i.phase !== "error");
+            if (initialActive) {
+                pollingIntervalRef.current = window.setInterval(tick, ACTIVE_POLL_INTERVAL);
+                tick();
+            }
         }
-    }, [items, serverUrl]);
+        return () => {
+            if (pollingIntervalRef.current) {
+                clearInterval(pollingIntervalRef.current);
+                pollingIntervalRef.current = null;
+            }
+        };
+    }, [serverUrl]);
 
     // 下载阶段: 获取最终文件并标记完成
     useEffect(() => {
@@ -216,8 +231,7 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
                         uploadId,
                         instant,
                         async: asyncFlag,
-                        jobId: asyncJobId,
-                        id: asyncClientId
+                        jobId: asyncJobId
                     } = await chunkUploadFile(it.file, {
                         serverBase: serverUrl,
                         quality: it.quality,

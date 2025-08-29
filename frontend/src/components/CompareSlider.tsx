@@ -18,6 +18,7 @@ const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
         setPos(50);
         setPan({ x: 0, y: 0 });
         setNat(null);
+        setScale(1); // 重置缩放，待最小填充计算后再调整
         if (original) {
             const img = new Image();
             img.onload = () => setNat({ w: img.naturalWidth, h: img.naturalHeight });
@@ -31,9 +32,8 @@ const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
         const applyMinCover = () => {
             const rect = ref.current!.getBoundingClientRect();
             const minCover = Math.max(rect.width / nat.w, rect.height / nat.h);
-            setScale((s) => (s < minCover ? minCover : s));
-            // 如果当前 pan 造成边缘露出，重置到 0
-            setPan((p) => ({ x: Math.min(0, p.x), y: Math.min(0, p.y) }));
+            setScale(minCover); // 强制使用最小填充缩放作为初始值
+            setPan({ x: 0, y: 0 });
         };
         applyMinCover();
         window.addEventListener("resize", applyMinCover);

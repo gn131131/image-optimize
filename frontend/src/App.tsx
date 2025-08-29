@@ -464,9 +464,21 @@ const App: React.FC = () => {
                 </div>
                 <div style={{ marginTop: "2.2rem", display: items.length ? "flex" : "none", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
                     {compare ? (
-                        <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
-                            <div style={{ transform: "scale(1.05)", maxWidth: 900, width: "100%" }}>
+                        <div className="compare-area" style={{ width: "100%", display: "flex", justifyContent: "center", position: "relative" }}>
+                            <div className="compare-stage" style={{ transform: "scale(1.05)", maxWidth: 900, width: "100%", position: "relative" }}>
                                 <CompareObject compare={compare} />
+                                <div className="quality-dock">
+                                    <QualityPanel
+                                        item={compare}
+                                        onQuality={(v) => {
+                                            if (!compare) return;
+                                            setItems((prev) => prev.map((p) => (p.id === compare.id ? { ...p, quality: v } : p)));
+                                            setCompare((c) => (c && c.id === compare.id ? { ...c, quality: v } : c));
+                                        }}
+                                        onApply={applyQuality}
+                                        disabled={batching}
+                                    />
+                                </div>
                             </div>
                         </div>
                     ) : (
@@ -478,17 +490,6 @@ const App: React.FC = () => {
                     )}
                 </div>
             </div>
-            {/* 垂直质量控制面板 */}
-            <QualityPanel
-                item={compare}
-                onQuality={(v) => {
-                    if (!compare) return;
-                    setItems((prev) => prev.map((p) => (p.id === compare.id ? { ...p, quality: v } : p)));
-                    setCompare((c) => (c && c.id === compare.id ? { ...c, quality: v } : c));
-                }}
-                onApply={applyQuality}
-                disabled={batching}
-            />
             <footer style={{ textAlign: "center", padding: "2rem 0", fontSize: ".68rem", opacity: 0.55, lineHeight: 1.5 }}>
                 隐私说明：图片仅在内存中即时处理，压缩完成即被清理，不会持久存储或用于模型训练。
             </footer>

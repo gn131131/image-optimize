@@ -38,19 +38,15 @@ const QualityPanel: React.FC<Props> = ({ item, onQuality, onApply, disabled }) =
                 onClick={onApply}
                 disabled={disabled || item.recompressing || item.quality === item.lastQuality}
                 aria-disabled={disabled || item.recompressing || item.quality === item.lastQuality}
+                title={item.recompressing ? "处理中" : item.quality === item.lastQuality ? "当前质量已应用" : "应用新质量"}
             >
-                应用
+                <span className="qp-ic" aria-hidden="true">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 8.2 6.8 12 13 4" />
+                    </svg>
+                </span>
+                <span>应用</span>
             </button>
-            {item.lastQuality !== item.quality && !item.recompressing && (
-                <div className="qp-hint" aria-hidden>
-                    变化: {item.lastQuality}→{item.quality}
-                </div>
-            )}
-            {item.recompressing && (
-                <div className="qp-hint" style={{ color: "var(--accent)" }}>
-                    处理中...
-                </div>
-            )}
         </div>
     );
 };

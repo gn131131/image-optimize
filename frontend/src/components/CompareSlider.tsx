@@ -106,44 +106,58 @@ const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
         setScale(1);
     };
 
-    // Wheel zoom with pointer focus (Ctrl+wheel not required, always zoom)
-    const onWheel = (e: React.WheelEvent) => {
-        if (!nat || !ref.current) return;
-        e.preventDefault();
-        const rect = ref.current.getBoundingClientRect();
-        const cx = e.clientX - rect.left;
-        const cy = e.clientY - rect.top;
-        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-        const newScale = Math.min(8, Math.max(0.1, scale * zoomFactor));
-        if (newScale === scale) return;
-        // keep cursor point stable: pan' = c - (c - pan) * (new/newOld)
-        const nx = cx - (cx - pan.x) * (newScale / scale);
-        const ny = cy - (cy - pan.y) * (newScale / scale);
-        // clamp
-        let clampedX = nx;
-        let clampedY = ny;
-        const scaledW = nat.w * newScale;
-        const scaledH = nat.h * newScale;
-        const minX = Math.min(0, rect.width - scaledW);
-        const minY = Math.min(0, rect.height - scaledH);
-        if (clampedX > 0) clampedX = 0;
-        else if (clampedX < minX) clampedX = minX;
-        if (clampedY > 0) clampedY = 0;
-        else if (clampedY < minY) clampedY = minY;
-        setScale(newScale);
-        setPan({ x: clampedX, y: clampedY });
-    };
+    // 统一的滚轮缩放函数（保持指针位置稳定）
+    const wheelZoom = useCallback(
+        (clientX: number, clientY: number, deltaY: number) => {
+            if (!nat || !ref.current) return;
+            const rect = ref.current.getBoundingClientRect();
+            const cx = clientX - rect.left;
+            const cy = clientY - rect.top;
+            const zoomFactor = deltaY > 0 ? 0.9 : 1.1;
+            let newScale = scale * zoomFactor;
+            newScale = Math.min(8, Math.max(0.1, newScale));
+            if (newScale === scale) return;
+            const nx = cx - (cx - pan.x) * (newScale / scale);
+            const ny = cy - (cy - pan.y) * (newScale / scale);
+            // clamp 边界
+            const scaledW = nat.w * newScale;
+            const scaledH = nat.h * newScale;
+            const minX = Math.min(0, rect.width - scaledW);
+            const minY = Math.min(0, rect.height - scaledH);
+            let clampedX = nx;
+            if (clampedX > 0) clampedX = 0;
+            else if (clampedX < minX) clampedX = minX;
+            let clampedY = ny;
+            if (clampedY > 0) clampedY = 0;
+            else if (clampedY < minY) clampedY = minY;
+            setScale(newScale);
+            setPan({ x: clampedX, y: clampedY });
+        },
+        [nat, pan.x, pan.y, scale]
+    );
 
-    // compute clip for original image considering pan + scale so slider lines up
-    const clipRightPx = (() => {
-        if (!nat || !ref.current) return `${100 - pos}%`; // fallback
+    // 非被动监听阻止页面滚动
+    useEffect(() => {
+        const node = ref.current;
+        if (!node) return;
+        const handler = (e: WheelEvent) => {
+            e.preventDefault();
+            wheelZoom(e.clientX, e.clientY, e.deltaY);
+        };
+        node.addEventListener("wheel", handler, { passive: false });
+        return () => node.removeEventListener("wheel", handler);
+    }, [wheelZoom]);
+
+    // 计算原图裁剪 clipPath，使滑块与实际分界对齐
+    let clipRightPx = `inset(0 50% 0 0)`; // fallback
+    if (nat && ref.current) {
         const rect = ref.current.getBoundingClientRect();
-        const sliderX = (pos / 100) * rect.width; // container coordinate
-        const unscaledVisibleX = (sliderX - pan.x) / scale; // coordinate in image space
-        const rightInset = nat.w - unscaledVisibleX; // pixels to hide from right
+        const sliderX = (pos / 100) * rect.width; // 容器坐标
+        const unscaledVisibleX = (sliderX - pan.x) / scale; // 图像空间坐标
+        const rightInset = nat.w - unscaledVisibleX;
         const clamped = Math.min(Math.max(0, rightInset), nat.w);
-        return `inset(0 ${clamped}px 0 0)`;
-    })();
+        clipRightPx = `inset(0 ${clamped}px 0 0)`;
+    }
 
     if (!original || !compressed) return null;
 
@@ -156,7 +170,6 @@ const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
             onPointerUp={endPan}
             onPointerCancel={endPan}
             onDoubleClick={onDoubleClick}
-            onWheel={onWheel}
         >
             <div className={"compare-content" + (draggingPanRef.current ? " dragging" : "")} style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}>
                 <div className="compare-scale" style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
@@ -165,7 +178,6 @@ const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
                 </div>
             </div>
             <div className="slider" aria-hidden>
-                <div className="slider-bar" style={{ left: pos + "%" }} />
                 <div
                     className="slider-handle"
                     style={{ left: pos + "%" }}

@@ -263,13 +263,34 @@ input[type="range"] {
 .compare-wrapper img {
     position: absolute;
     inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
+    /* 改为自然尺寸由内部容器控制 */
+    width: auto;
+    height: auto;
+    max-width: none;
+    max-height: none;
+    object-fit: none;
     background: #0d0f12;
 }
 .compare-wrapper .top {
     clip-path: inset(0 50% 0 0);
+}
+/* 支持平移的包裹层 */
+.compare-pan-root {
+    cursor: grab;
+}
+.compare-pan-root:active {
+    cursor: grabbing;
+}
+.compare-pan-root .compare-content {
+    position: absolute;
+    inset: 0;
+    width: max-content;
+    height: max-content;
+}
+.compare-pan-root .compare-content img {
+    position: absolute;
+    top: 0;
+    left: 0;
 }
 .slider {
     position: absolute;

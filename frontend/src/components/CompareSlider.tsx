@@ -6,11 +6,22 @@ interface Props {
 }
 
 const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
-    const [pos, setPos] = useState(50); // 0-100
+    const [pos, setPos] = useState(50); // slider position 0-100
+    const [nat, setNat] = useState<{ w: number; h: number } | null>(null); // natural image size
+    const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+    const draggingPanRef = useRef(false);
+    const panOriginRef = useRef<{ x: number; y: number; startX: number; startY: number }>({ x: 0, y: 0, startX: 0, startY: 0 });
     const ref = useRef<HTMLDivElement>(null);
     const draggingRef = useRef(false);
     useEffect(() => {
         setPos(50);
+        setPan({ x: 0, y: 0 });
+        setNat(null);
+        if (original) {
+            const img = new Image();
+            img.onload = () => setNat({ w: img.naturalWidth, h: img.naturalHeight });
+            img.src = original;
+        }
     }, [original, compressed]);
     const calcAndSet = useCallback((clientX: number) => {
         if (!ref.current) return;
@@ -49,12 +60,63 @@ const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
             setPos((p) => Math.min(100, p + 2));
         }
     };
+    const onPanPointerDown = (e: React.PointerEvent) => {
+        // avoid starting pan when interacting with slider handle
+        const target = e.target as HTMLElement;
+        if (target.closest(".slider-handle")) return;
+        if (e.button !== 0) return;
+        e.preventDefault();
+        draggingPanRef.current = true;
+        const rect = ref.current?.getBoundingClientRect();
+        panOriginRef.current = { x: pan.x, y: pan.y, startX: e.clientX, startY: e.clientY };
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    };
+    const onPanPointerMove = (e: React.PointerEvent) => {
+        if (!draggingPanRef.current) return;
+        const { x, y, startX, startY } = panOriginRef.current;
+        let nx = x + (e.clientX - startX);
+        let ny = y + (e.clientY - startY);
+        // clamp so image不会完全移出（如果有 natural 尺寸）
+        if (nat && ref.current) {
+            const r = ref.current.getBoundingClientRect();
+            const maxX = 0;
+            const maxY = 0;
+            const minX = Math.min(0, r.width - nat.w);
+            const minY = Math.min(0, r.height - nat.h);
+            if (nx > maxX) nx = maxX;
+            else if (nx < minX) nx = minX;
+            if (ny > maxY) ny = maxY;
+            else if (ny < minY) ny = minY;
+        }
+        setPan({ x: nx, y: ny });
+    };
+    const endPan = (e: React.PointerEvent) => {
+        if (!draggingPanRef.current) return;
+        draggingPanRef.current = false;
+        try {
+            (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+        } catch {}
+    };
+    const onDoubleClick = () => {
+        setPan({ x: 0, y: 0 });
+    };
+
     if (!original || !compressed) return null;
 
     return (
-        <div ref={ref} className="compare-wrapper">
-            <img src={compressed} alt="compressed" />
-            <img src={original} alt="original" className="top" style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }} />
+        <div
+            ref={ref}
+            className="compare-wrapper compare-pan-root"
+            onPointerDown={onPanPointerDown}
+            onPointerMove={onPanPointerMove}
+            onPointerUp={endPan}
+            onPointerCancel={endPan}
+            onDoubleClick={onDoubleClick}
+        >
+            <div className={"compare-content" + (draggingPanRef.current ? " dragging" : "")} style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}>
+                <img src={compressed} alt="compressed" draggable={false} />
+                <img src={original} alt="original" className="top" draggable={false} style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }} />
+            </div>
             <div className="slider" aria-hidden>
                 <div className="slider-bar" style={{ left: pos + "%" }} />
                 <div

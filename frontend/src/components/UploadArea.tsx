@@ -54,16 +54,10 @@ const UploadArea: React.FC<Props> = ({ onFiles, disabled, onRejectInfo }) => {
             <input {...getInputProps()} />
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem" }}>
                 <div style={{ width: 74, height: 74, position: "relative" }}>
-                    <svg width="74" height="74" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ filter: "drop-shadow(0 4px 10px rgba(0,0,0,.45))" }}>
-                        <rect x="6" y="10" width="52" height="44" rx="10" fill="url(#upg)" stroke="rgba(255,255,255,.08)" strokeWidth="2" />
-                        <path d="M20 40L28 30L38 38L46 28L56 40" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" opacity=".9" />
-                        <circle cx="26" cy="23" r="5" fill="#ffffff" opacity="0.85" />
-                        <defs>
-                            <linearGradient id="upg" x1="6" y1="10" x2="58" y2="54" gradientUnits="userSpaceOnUse">
-                                <stop stopColor="#1d6fd9" />
-                                <stop offset="1" stopColor="#144a92" />
-                            </linearGradient>
-                        </defs>
+                    <svg width="74" height="74" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ stroke: "var(--accent)", strokeWidth: 2.8 }}>
+                        <rect x="10" y="12" width="44" height="40" rx="9" />
+                        <path d="M18 40l10-12 8 8 10-14 8 18" strokeLinecap="round" strokeLinejoin="round" />
+                        <circle cx="28" cy="24" r="6" />
                     </svg>
                 </div>
                 <p style={{ fontSize: "0.95rem", margin: 0, fontWeight: 600, letterSpacing: ".5px" }}>拖拽或点击添加图片</p>

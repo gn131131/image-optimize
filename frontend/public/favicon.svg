@@ -1,16 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <defs>
-    <linearGradient id="g1" x1="8" y1="10" x2="56" y2="54" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#4ea1ff"/>
-      <stop offset="1" stop-color="#15529f"/>
-    </linearGradient>
-    <linearGradient id="g2" x1="20" y1="22" x2="48" y2="46" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#ffffff" stop-opacity="0.9"/>
-      <stop offset="1" stop-color="#d8e9ff" stop-opacity="0.6"/>
-    </linearGradient>
-  </defs>
-  <rect x="8" y="12" width="48" height="40" rx="12" fill="url(#g1)"/>
-  <path d="M16 40l8-10 6 6 10-13 10 17" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="26" cy="23" r="6" fill="url(#g2)" />
-  <rect x="8" y="12" width="48" height="40" rx="12" stroke="rgba(255,255,255,0.4)" stroke-width="2" fill="none"/>
+  <!-- 线框图片图标：简洁、无大面积填充，适配深浅背景 -->
+  <rect x="10" y="12" width="44" height="40" rx="9" stroke="#48a2ff" stroke-width="3" />
+  <path d="M18 40l10-12 8 8 10-14 8 18" stroke="#48a2ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="28" cy="24" r="6" stroke="#48a2ff" stroke-width="3" />
+  <!-- 轻描外轮廓增强在高对比背景中可见性 -->
+  <rect x="10" y="12" width="44" height="40" rx="9" stroke="#15529f" stroke-width="1" opacity=".45" />
 </svg>

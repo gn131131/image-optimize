@@ -292,6 +292,11 @@ input[type="range"] {
     top: 0;
     left: 0;
 }
+.compare-pan-root .compare-scale {
+    position: relative;
+    width: max-content;
+    height: max-content;
+}
 .slider {
     position: absolute;
     inset: 0;

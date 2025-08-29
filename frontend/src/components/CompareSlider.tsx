@@ -8,7 +8,8 @@ interface Props {
 const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
     const [pos, setPos] = useState(50); // slider position 0-100
     const [nat, setNat] = useState<{ w: number; h: number } | null>(null); // natural image size
-    const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+    const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 }); // translation in container coords (post-scale wrapper)
+    const [scale, setScale] = useState(1);
     const draggingPanRef = useRef(false);
     const panOriginRef = useRef<{ x: number; y: number; startX: number; startY: number }>({ x: 0, y: 0, startX: 0, startY: 0 });
     const ref = useRef<HTMLDivElement>(null);
@@ -16,6 +17,7 @@ const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
     useEffect(() => {
         setPos(50);
         setPan({ x: 0, y: 0 });
+        setScale(1);
         setNat(null);
         if (original) {
             const img = new Image();
@@ -76,13 +78,15 @@ const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
         const { x, y, startX, startY } = panOriginRef.current;
         let nx = x + (e.clientX - startX);
         let ny = y + (e.clientY - startY);
-        // clamp so image不会完全移出（如果有 natural 尺寸）
+        // clamp with scale considered
         if (nat && ref.current) {
             const r = ref.current.getBoundingClientRect();
+            const scaledW = nat.w * scale;
+            const scaledH = nat.h * scale;
             const maxX = 0;
             const maxY = 0;
-            const minX = Math.min(0, r.width - nat.w);
-            const minY = Math.min(0, r.height - nat.h);
+            const minX = Math.min(0, r.width - scaledW);
+            const minY = Math.min(0, r.height - scaledH);
             if (nx > maxX) nx = maxX;
             else if (nx < minX) nx = minX;
             if (ny > maxY) ny = maxY;
@@ -99,7 +103,47 @@ const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
     };
     const onDoubleClick = () => {
         setPan({ x: 0, y: 0 });
+        setScale(1);
     };
+
+    // Wheel zoom with pointer focus (Ctrl+wheel not required, always zoom)
+    const onWheel = (e: React.WheelEvent) => {
+        if (!nat || !ref.current) return;
+        e.preventDefault();
+        const rect = ref.current.getBoundingClientRect();
+        const cx = e.clientX - rect.left;
+        const cy = e.clientY - rect.top;
+        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+        const newScale = Math.min(8, Math.max(0.1, scale * zoomFactor));
+        if (newScale === scale) return;
+        // keep cursor point stable: pan' = c - (c - pan) * (new/newOld)
+        const nx = cx - (cx - pan.x) * (newScale / scale);
+        const ny = cy - (cy - pan.y) * (newScale / scale);
+        // clamp
+        let clampedX = nx;
+        let clampedY = ny;
+        const scaledW = nat.w * newScale;
+        const scaledH = nat.h * newScale;
+        const minX = Math.min(0, rect.width - scaledW);
+        const minY = Math.min(0, rect.height - scaledH);
+        if (clampedX > 0) clampedX = 0;
+        else if (clampedX < minX) clampedX = minX;
+        if (clampedY > 0) clampedY = 0;
+        else if (clampedY < minY) clampedY = minY;
+        setScale(newScale);
+        setPan({ x: clampedX, y: clampedY });
+    };
+
+    // compute clip for original image considering pan + scale so slider lines up
+    const clipRightPx = (() => {
+        if (!nat || !ref.current) return `${100 - pos}%`; // fallback
+        const rect = ref.current.getBoundingClientRect();
+        const sliderX = (pos / 100) * rect.width; // container coordinate
+        const unscaledVisibleX = (sliderX - pan.x) / scale; // coordinate in image space
+        const rightInset = nat.w - unscaledVisibleX; // pixels to hide from right
+        const clamped = Math.min(Math.max(0, rightInset), nat.w);
+        return `inset(0 ${clamped}px 0 0)`;
+    })();
 
     if (!original || !compressed) return null;
 
@@ -112,10 +156,13 @@ const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
             onPointerUp={endPan}
             onPointerCancel={endPan}
             onDoubleClick={onDoubleClick}
+            onWheel={onWheel}
         >
             <div className={"compare-content" + (draggingPanRef.current ? " dragging" : "")} style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}>
-                <img src={compressed} alt="compressed" draggable={false} />
-                <img src={original} alt="original" className="top" draggable={false} style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }} />
+                <div className="compare-scale" style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
+                    <img src={compressed} alt="compressed" draggable={false} />
+                    <img src={original} alt="original" className="top" draggable={false} style={{ clipPath: clipRightPx }} />
+                </div>
             </div>
             <div className="slider" aria-hidden>
                 <div className="slider-bar" style={{ left: pos + "%" }} />

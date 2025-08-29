@@ -47,7 +47,7 @@ body {
     color: var(--text-primary);
 }
 a {
-    color: #4ea1ff;
+    color: var(--accent);
 }
 header {
     padding: 1.25rem 2rem;
@@ -276,16 +276,77 @@ input[type="range"] {
 button {
     transition: background 0.25s, box-shadow 0.25s, border-color 0.25s;
 }
-button:hover:not(:disabled) {
+/* 深色模式下的 hover 强调 */
+:root[data-theme="dark"] button:hover:not(:disabled) {
     background: linear-gradient(135deg, #33485e, #253541);
-    box-shadow: 0 0 0 1px #4ea1ff, 0 0 0 3px rgba(78, 161, 255, 0.15), 0 3px 10px -4px rgba(0, 0, 0, 0.7);
-    border-color: #4ea1ff;
+    box-shadow: 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent), 0 3px 10px -4px rgba(0, 0, 0, 0.7);
+    border-color: var(--accent);
     transform: none;
 }
-.image-item:hover {
-    box-shadow: 0 0 0 2px #3d91ff, 0 0 0 6px rgba(61, 145, 255, 0.15);
+/* 浅色模式按钮 hover 更轻，避免过度阴影 */
+:root[data-theme="light"] button:hover:not(:disabled) {
+    background: linear-gradient(135deg, var(--bg-panel), var(--bg-panel-alt));
+    box-shadow: 0 0 0 1px var(--accent), 0 3px 8px -2px rgba(0, 0, 0, 0.12);
+    border-color: var(--accent);
+    transform: translateY(-1px);
+}
+
+/* 深色 item hover 保留原效果；浅色单独定义 */
+:root[data-theme="dark"] .image-item:hover {
+    box-shadow: 0 0 0 2px var(--accent), 0 0 0 6px rgba(61, 145, 255, 0.15);
     background: linear-gradient(145deg, #243543, #172128);
     transform: none;
+}
+:root[data-theme="light"] .image-item {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04) inset;
+}
+:root[data-theme="light"] .image-item:hover {
+    box-shadow: 0 0 0 2px var(--accent), 0 4px 10px -3px rgba(0, 0, 0, 0.12);
+    background: linear-gradient(145deg, #f6f9fb, #eef2f6);
+    transform: translateY(-2px);
+}
+
+/* 上传区域浅色优化 */
+:root[data-theme="light"] .upload-area {
+    background: radial-gradient(circle at 30% 40%, #ffffff, #eef3f7 75%);
+    border-color: var(--border-color-soft);
+}
+:root[data-theme="light"] .upload-area:hover:not(.drag) {
+    background: radial-gradient(circle at 30% 40%, #f9fcff, #e9f2fa 75%);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent), 0 6px 18px -6px rgba(0, 0, 0, 0.18);
+}
+:root[data-theme="light"] .upload-area.drag {
+    background: radial-gradient(circle at 30% 40%, #f1f8ff, #e4eef7 75%);
+}
+
+/* 浅色主题下的缩略图边框、compare 背景细化 */
+:root[data-theme="light"] .thumb {
+    border-color: #cfd8e0;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+:root[data-theme="light"] .compare-wrapper {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.06) inset;
+}
+:root[data-theme="light"] .compare-wrapper::before {
+    background: repeating-conic-gradient(#f2f6f9 0deg 15deg, #e8eef2 15deg 30deg);
+    opacity: 0.9;
+}
+
+/* 状态条色彩在浅色模式下调整亮度 */
+:root[data-theme="light"] .image-item .status-bar {
+    background: #c4ccd3;
+}
+:root[data-theme="light"] .image-item.status-pending .status-bar {
+    background: linear-gradient(180deg, #cfd6dc, #b9c2c9);
+}
+:root[data-theme="light"] .image-item.status-compressing .status-bar {
+    background: linear-gradient(180deg, #1d6fd9, #15539f);
+}
+:root[data-theme="light"] .image-item.status-done .status-bar {
+    background: linear-gradient(180deg, #33b36f, #238a52);
+}
+:root[data-theme="light"] .image-item.status-error .status-bar {
+    background: linear-gradient(180deg, #e05346, #b1362b);
 }
 .image-item .status-bar {
     position: absolute;

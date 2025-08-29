@@ -459,28 +459,7 @@ const App: React.FC = () => {
                             onResumeChunk={resumeChunk}
                         />
                     ))}
-                    {!items.length && (
-                        <div className="empty-hero">
-                            <div className="empty-hero-inner">
-                                <div className="icon-wrap">
-                                    <svg width="54" height="54" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                        <rect x="6" y="10" width="52" height="44" rx="8" fill="url(#g1)" stroke="#2d3a45" strokeWidth="2" />
-                                        <path d="M20 40L28 30L38 38L46 28L56 40" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" opacity=".9" />
-                                        <circle cx="26" cy="23" r="5" fill="#ffffff" opacity="0.85" />
-                                        <defs>
-                                            <linearGradient id="g1" x1="6" y1="10" x2="58" y2="54" gradientUnits="userSpaceOnUse">
-                                                <stop stopColor="#253545" />
-                                                <stop offset="1" stopColor="#1a242e" />
-                                            </linearGradient>
-                                        </defs>
-                                    </svg>
-                                </div>
-                                <h3>拖拽或点击上方区域添加图片</h3>
-                                <p>支持 JPG / PNG / WebP，单文件 ≤ 50MB，总大小 ≤ 200MB。</p>
-                                <p style={{ opacity: 0.7 }}>图片仅用于即时压缩处理，不被持久保存。</p>
-                            </div>
-                        </div>
-                    )}
+                    {/* 空列表时不再显示下方第二拖拽提示，避免视觉重复 */}
                 </div>
                 <div style={{ marginTop: "2.2rem", display: items.length ? "flex" : "none", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
                     {compare ? (

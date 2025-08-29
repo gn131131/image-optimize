@@ -52,8 +52,12 @@ const UploadArea: React.FC<Props> = ({ onFiles, disabled, onRejectInfo }) => {
     return (
         <div {...getRootProps({ className: "upload-area" + (isDragActive ? " drag" : "") })}>
             <input {...getInputProps()} />
-            <p>拖拽图片到此或点击选择 (支持多张)</p>
-            <p style={{ fontSize: "0.8rem", opacity: 0.7 }}>支持: JPG(JPEG/JFIF) / PNG / WebP</p>
+            <p style={{ fontSize: "0.95rem", margin: "0 0 .4rem" }}>拖拽或点击添加图片（支持多张）</p>
+            <div style={{ fontSize: "0.7rem", lineHeight: 1.45, opacity: 0.78 }}>
+                <div>格式: JPG / PNG / WebP</div>
+                <div>单文件 ≤ 50MB · 总大小 ≤ 200MB · 最多 30 张</div>
+                <div style={{ opacity: 0.65 }}>即时压缩处理，不做持久存储</div>
+            </div>
         </div>
     );
 };

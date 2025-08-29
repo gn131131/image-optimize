@@ -272,45 +272,6 @@ input[type="range"] {
     letter-spacing: 0.5px;
 }
 
-.empty-hero {
-    grid-column: 1 / -1;
-    border: 1.5px dashed #31404d;
-    border-radius: 18px;
-    padding: 3.2rem 1.6rem 3.6rem;
-    background: radial-gradient(circle at 35% 40%, #1d2732, #141b22 70%);
-    position: relative;
-    overflow: hidden;
-    min-height: 300px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.empty-hero::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, rgba(78, 161, 255, 0.08), rgba(78, 161, 255, 0) 60%);
-    pointer-events: none;
-}
-.empty-hero-inner {
-    text-align: center;
-    max-width: 560px;
-}
-.empty-hero .icon-wrap {
-    margin-bottom: 1rem;
-    filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.5));
-}
-.empty-hero h3 {
-    margin: 0.2rem 0 0.9rem;
-    font-size: 1.1rem;
-    letter-spacing: 0.5px;
-}
-.empty-hero p {
-    margin: 0.35rem 0;
-    font-size: 0.72rem;
-    letter-spacing: 0.4px;
-}
-
 /* Overrides & new UI enhancements */
 button {
     transition: background 0.25s, box-shadow 0.25s, border-color 0.25s;

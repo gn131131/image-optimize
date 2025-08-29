@@ -52,11 +52,26 @@ const UploadArea: React.FC<Props> = ({ onFiles, disabled, onRejectInfo }) => {
     return (
         <div {...getRootProps({ className: "upload-area" + (isDragActive ? " drag" : "") })}>
             <input {...getInputProps()} />
-            <p style={{ fontSize: "0.95rem", margin: "0 0 .4rem" }}>拖拽或点击添加图片（支持多张）</p>
-            <div style={{ fontSize: "0.7rem", lineHeight: 1.45, opacity: 0.78 }}>
-                <div>格式: JPG / PNG / WebP</div>
-                <div>单文件 ≤ 50MB · 总大小 ≤ 200MB · 最多 30 张</div>
-                <div style={{ opacity: 0.65 }}>即时压缩处理，不做持久存储</div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem" }}>
+                <div style={{ width: 74, height: 74, position: "relative" }}>
+                    <svg width="74" height="74" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ filter: "drop-shadow(0 4px 10px rgba(0,0,0,.45))" }}>
+                        <rect x="6" y="10" width="52" height="44" rx="10" fill="url(#upg)" stroke="rgba(255,255,255,.08)" strokeWidth="2" />
+                        <path d="M20 40L28 30L38 38L46 28L56 40" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" opacity=".9" />
+                        <circle cx="26" cy="23" r="5" fill="#ffffff" opacity="0.85" />
+                        <defs>
+                            <linearGradient id="upg" x1="6" y1="10" x2="58" y2="54" gradientUnits="userSpaceOnUse">
+                                <stop stopColor="#1d6fd9" />
+                                <stop offset="1" stopColor="#144a92" />
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <p style={{ fontSize: "0.95rem", margin: 0, fontWeight: 600, letterSpacing: ".5px" }}>拖拽或点击添加图片</p>
+                <div style={{ fontSize: "0.7rem", lineHeight: 1.5, opacity: 0.78, textAlign: "center" }}>
+                    <div>格式: JPG / PNG / WebP</div>
+                    <div>单文件 ≤ 50MB · 总大小 ≤ 200MB · 最多 30 张</div>
+                    <div style={{ opacity: 0.6 }}>即时压缩处理，不做持久存储</div>
+                </div>
             </div>
         </div>
     );

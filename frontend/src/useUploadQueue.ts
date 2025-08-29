@@ -31,6 +31,10 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
     const serverUrl = useServerBase();
     const [items, setItems] = useState<QueueItem[]>([]);
     const [batching, setBatching] = useState(false);
+    // 批量轮询相关
+    const pollingIntervalRef = useRef<number | null>(null);
+    const lastPollRef = useRef<number>(0);
+    const ACTIVE_POLL_INTERVAL = 700; // ms 节流
 
     const addFiles = useCallback(
         async (files: File[]) => {
@@ -77,12 +81,12 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
     const activeUploadsRef = useRef(0);
     const sendSingleFile = useCallback(
         async (target: QueueItem, quality: number) => {
-            setItems((prev) => prev.map((i) => (i.id === target.id ? { ...i, status: "compressing", error: undefined, progress: 0, phase: "upload" } : i)));
+            setItems((prev) => prev.map((i) => (i.id === target.id ? { ...i, status: "compressing", error: undefined, progress: 0, phase: "upload", compressionProgress: 0 } : i)));
             const ID_SEP = "__IDSEP__";
             const form = new FormData();
             form.append("files", target.file, `${target.id}${ID_SEP}${target.file.name}`);
             form.append("clientMap", JSON.stringify({ [target.file.name]: target.id }));
-            const url = `${serverUrl}/api/compress?quality=${quality}`.replace(/\/\/api/, "/api");
+            const url = `${serverUrl}/api/compress?quality=${quality}&progress=1`.replace(/\/\/api/, "/api");
             activeUploadsRef.current++;
             setBatching(true);
             try {
@@ -93,7 +97,9 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
                     xhr.upload.onprogress = (e) => {
                         if (!e.lengthComputable) return;
                         const pct = e.total ? e.loaded / e.total : 0;
-                        setItems((prev) => prev.map((p) => (p.id === target.id ? { ...p, progress: pct, phase: pct >= 1 ? "compress" : "upload" } : p)));
+                        const enteredCompress = pct >= 1;
+                        setItems((prev) => prev.map((p) => (p.id === target.id ? { ...p, progress: pct, phase: enteredCompress ? "compress" : "upload" } : p)));
+                        // 进入 compress 阶段后由批量轮询更新 compressionProgress
                     };
                     xhr.onerror = () => reject(new Error("网络错误"));
                     xhr.onload = () => {
@@ -102,23 +108,13 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
                     };
                     xhr.send(form);
                 });
-                const dataItem = (respJson.items && respJson.items[0]) || undefined;
-                if (!dataItem) throw new Error("响应无结果");
-                if (dataItem.error) {
-                    setItems((prev) => prev.map((i) => (i.id === target.id ? { ...i, status: "error", error: mapError(dataItem.error), progress: undefined, phase: "error" } : i)));
-                    return;
-                }
-                setItems((prev) => prev.map((i) => (i.id === target.id ? { ...i, compressedSize: dataItem.compressedSize, downloadUrl: dataItem.downloadUrl, progress: 1, phase: "download" } : i)));
-                try {
-                    const bResp = await fetch(`${serverUrl}${dataItem.downloadUrl}?t=${Date.now()}`);
-                    if (!bResp.ok) throw new Error("下载失败");
-                    const blob = await bResp.blob();
-                    setItems((prev) =>
-                        prev.map((i) => (i.id === target.id ? { ...i, compressedBlob: blob, lastQuality: i.quality, recompressing: false, status: "done", phase: "done", progress: 1 } : i))
-                    );
-                } catch (err: any) {
-                    setItems((prev) => prev.map((i) => (i.id === target.id ? { ...i, status: "error", error: err.message, phase: "error" } : i)));
-                }
+                // 异步模式响应: { async:true, items:[{id,jobId,...}] }
+                if (!respJson || !respJson.items || !respJson.items.length) throw new Error("响应无结果");
+                const jobInfo = respJson.items.find((it: any) => it.id === target.id) || respJson.items[0];
+                if (!jobInfo || !jobInfo.jobId) throw new Error("缺少 jobId");
+                // 进入真实 compress 阶段并开始轮询
+                setItems((prev) => prev.map((i) => (i.id === target.id ? ({ ...i, phase: "compress", compressionProgress: 0.05, jobId: jobInfo.jobId } as any) : i)));
+                setItems((prev) => prev.map((i) => (i.id === target.id ? ({ ...i, phase: "compress", compressionProgress: 0, jobId: jobInfo.jobId } as any) : i)));
             } catch (e: any) {
                 showMsg(e.message || "上传失败");
                 setItems((prev) => prev.map((i) => (i.id === target.id ? { ...i, status: "error", error: e.message, progress: undefined, phase: "error" } : i)));
@@ -129,6 +125,67 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
         },
         [serverUrl, showMsg]
     );
+
+    // 批量轮询 job 进度
+    useEffect(() => {
+        const activeJobs = items.filter((i) => i.jobId && i.phase !== "done" && i.phase !== "error");
+        if (!activeJobs.length) {
+            if (pollingIntervalRef.current) {
+                clearInterval(pollingIntervalRef.current);
+                pollingIntervalRef.current = null;
+            }
+            return;
+        }
+        const phaseMap: Record<string, number> = { queued: 0, decoding: 0.05, resizing: 0.25, encoding: 0.6, finalizing: 0.9, done: 1 };
+        const tick = async () => {
+            const now = Date.now();
+            if (now - lastPollRef.current < ACTIVE_POLL_INTERVAL) return; // 简单节流
+            lastPollRef.current = now;
+            try {
+                const ids = Array.from(new Set(activeJobs.map((j) => j.jobId!))).join(",");
+                if (!ids) return;
+                const resp = await fetch(`${serverUrl}/api/jobs?ids=${encodeURIComponent(ids)}`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const list: any[] = data.items || [];
+                if (!list.length) return;
+                setItems((prev) =>
+                    prev.map((it) => {
+                        if (!it.jobId) return it;
+                        const rec = list.find((r) => r.jobId === it.jobId);
+                        if (!rec) return it;
+                        if (rec.error) return { ...it, status: "error", error: mapError(rec.error), phase: "error", compressionProgress: 1 };
+                        const phase = rec.phase as string;
+                        if (phase === "done" && rec.downloadUrl) {
+                            return { ...it, phase: "download", compressionProgress: 1, compressedSize: rec.compressedSize, downloadUrl: rec.downloadUrl };
+                        }
+                        const prog = typeof rec.progress === "number" ? rec.progress : phaseMap[phase] ?? 0;
+                        return { ...it, phase: "compress", compressionProgress: prog };
+                    })
+                );
+            } catch {}
+        };
+        if (!pollingIntervalRef.current) {
+            pollingIntervalRef.current = window.setInterval(tick, ACTIVE_POLL_INTERVAL);
+            tick();
+        }
+    }, [items, serverUrl]);
+
+    // 下载阶段: 获取最终文件并标记完成
+    useEffect(() => {
+        const pending = items.filter((i) => i.phase === "download" && i.downloadUrl && !i.compressedBlob);
+        if (!pending.length) return;
+        pending.forEach(async (it) => {
+            try {
+                const resp = await fetch(`${serverUrl}${it.downloadUrl}?t=${Date.now()}`);
+                if (!resp.ok) throw new Error("下载失败");
+                const blob = await resp.blob();
+                setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, compressedBlob: blob, status: "done", phase: "done", lastQuality: p.quality, progress: 1, compressionProgress: 1 } : p)));
+            } catch (e: any) {
+                setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, status: "error", error: e.message, phase: "error" } : p)));
+            }
+        });
+    }, [items, serverUrl]);
 
     // pending 普通文件上传
     const processedRef = useRef<Set<string>>(new Set());
@@ -154,10 +211,18 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
                         hash = await hashFileSHA256(it.file);
                         (it as any)._hash = hash;
                     }
-                    const { item, uploadId, instant } = await chunkUploadFile(it.file, {
+                    const {
+                        item,
+                        uploadId,
+                        instant,
+                        async: asyncFlag,
+                        jobId: asyncJobId,
+                        id: asyncClientId
+                    } = await chunkUploadFile(it.file, {
                         serverBase: serverUrl,
                         quality: it.quality,
                         hash,
+                        clientId: it.id,
                         signal: it.chunkAbort?.signal,
                         onProgress: (loaded, total) => {
                             setItems((prev) =>
@@ -192,6 +257,9 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
                                     : p
                             )
                         );
+                        return;
+                    } else if (asyncFlag && asyncJobId) {
+                        setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, phase: "compress", jobId: asyncJobId, compressionProgress: 0 } : p)));
                         return;
                     } else if (item?.error) {
                         setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, status: "error", error: mapError(item.error), chunkUploadId: uploadId, phase: "error" } : p)));

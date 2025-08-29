@@ -47,22 +47,33 @@ const ImageItem: React.FC<Props> = ({ item, selected, onSelect, onRemove, onDown
                         {item.lastQuality === 100 || item.quality === 100 ? "原图" : `Q:${item.quality}`}
                     </span>
                 </div>
-                {/* 上传进度条（分块或普通） */}
-                {((item.isChunked && item.status === "compressing" && typeof item.chunkProgress === "number" && item.chunkProgress < 1) ||
-                    (!item.isChunked && item.status === "compressing" && typeof item.progress === "number" && item.progress < 1)) && (
+                {/* 统一进度条（上传 + 压缩模拟） */}
+                {item.status === "compressing" && (
                     <div className="progress-track">
                         <div className="progress-label">
                             {(() => {
                                 const phaseMap: Record<string, string> = { hash: "计算哈希", upload: "上传", compress: "压缩", download: "下载" };
-                                const currentPct = item.isChunked ? item.uploadPercent ?? Math.round((item.chunkProgress || 0) * 100) : Math.round((item.progress || 0) * 100);
-                                const phaseLabel = item.isChunked ? phaseMap[item.phase || "upload"] || item.phase || "" : item.phase ? phaseMap[item.phase] || item.phase : "上传";
-                                return `${phaseLabel} ${currentPct}%`;
+                                let pct = 0;
+                                if (item.phase === "hash") pct = 5; // 固定显示一点
+                                else if (item.phase === "upload") {
+                                    pct = item.isChunked ? item.uploadPercent || Math.round((item.chunkProgress || 0) * 100) : Math.round((item.progress || 0) * 100);
+                                } else if (item.phase === "compress") {
+                                    pct = Math.round((item.compressionProgress ?? 0) * 40 + 60); // 压缩阶段映射到 60-100 之间
+                                } else if (item.phase === "download") pct = 100;
+                                const phaseLabel = phaseMap[item.phase || "upload"] || item.phase || "";
+                                return `${phaseLabel} ${pct}%`;
                             })()}
                         </div>
                         <div
                             className="progress-fill"
                             style={{
-                                width: `${(item.isChunked ? item.chunkProgress || 0 : item.progress || 0) * 100}%`
+                                width: (() => {
+                                    if (item.phase === "hash") return "5%";
+                                    if (item.phase === "upload") return `${(item.isChunked ? item.chunkProgress || 0 : item.progress || 0) * 60}%`; // 上传阶段占 0-60%
+                                    if (item.phase === "compress") return `${60 + (item.compressionProgress ?? 0) * 40}%`;
+                                    if (item.phase === "download" || item.phase === "done") return "100%";
+                                    return "0%";
+                                })()
                             }}
                         />
                     </div>

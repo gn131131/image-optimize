@@ -7,14 +7,15 @@ export interface ChunkUploadOptions {
     signal?: AbortSignal;
     quality: number;
     hash?: string; // 预先计算的文件 hash
+    clientId?: string; // 传递给后端用于 job 关联
 }
 
 // 初始化分块会话
-async function initSession(base: string, file: File, totalChunks: number, quality: number, hash?: string): Promise<any> {
+async function initSession(base: string, file: File, totalChunks: number, quality: number, hash?: string, clientId?: string): Promise<any> {
     const resp = await fetch(`${base}/api/upload/init`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name, size: file.size, mime: file.type, totalChunks, quality, hash })
+        body: JSON.stringify({ filename: file.name, size: file.size, mime: file.type, totalChunks, quality, hash, clientId })
     });
     if (!resp.ok) throw new Error("init失败");
     return resp.json();
@@ -29,7 +30,7 @@ async function uploadChunk(base: string, uploadId: string, index: number, blob: 
 }
 
 async function complete(base: string, uploadId: string, quality: number) {
-    const resp = await fetch(`${base}/api/upload/complete?uploadId=${encodeURIComponent(uploadId)}&quality=${quality}`.replace(/\/\/+api/, "/api"), { method: "POST" });
+    const resp = await fetch(`${base}/api/upload/complete?uploadId=${encodeURIComponent(uploadId)}&quality=${quality}&progress=1`.replace(/\/\/+api/, "/api"), { method: "POST" });
     if (!resp.ok) throw new Error("complete失败");
     return resp.json();
 }
@@ -37,7 +38,7 @@ async function complete(base: string, uploadId: string, quality: number) {
 export async function chunkUploadFile(file: File, opts: ChunkUploadOptions): Promise<any> {
     const chunkSize = opts.chunkSize || 4 * 1024 * 1024;
     const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
-    const init = await initSession(opts.serverBase, file, totalChunks, opts.quality, opts.hash);
+    const init = await initSession(opts.serverBase, file, totalChunks, opts.quality, opts.hash, opts.clientId);
     if (init.instant) {
         // 秒传
         return { ...init, uploadId: init.uploadId };

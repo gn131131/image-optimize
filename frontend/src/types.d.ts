@@ -21,4 +21,7 @@ export interface QueueItem {
     uploadPercent?: number; // 上传阶段百分比 (0-100)
     // 普通批量上传的整体进度 (0-1)，与分块 chunkProgress 区分；UI 统一显示任一存在的值
     progress?: number;
+    // 压缩阶段估算进度 (0-1)，后端无细粒度推送时前端模拟
+    compressionProgress?: number;
+    jobId?: string; // 后端异步压缩任务 ID （进度轮询）
 }

@@ -67,6 +67,7 @@ interface UploadSession {
     updated: number;
     quality?: number;
     hash?: string; // 客户端可选传摘要，用于去重(未实现逻辑仅占位)
+    clientId?: string; // 前端队列项 ID
 }
 const UPLOAD_SESSIONS = new Map<string, UploadSession>();
 // hash+quality -> cacheId (压缩结果缓存索引，命中即可秒传)
@@ -88,6 +89,7 @@ function cleanupUploadSessions() {
 }
 setInterval(cleanupUploadSessions, 60 * 1000).unref();
 
+// 原同步压缩逻辑（保留用于非进度模式）
 async function compressBuffer(id: string, originalName: string, mime: string, buffer: Buffer, quality: number, originalHash?: string): Promise<CompressItemResult> {
     try {
         if (!ALLOWED_MIME.includes(mime)) return { id, originalName, error: "unsupported_type" };
@@ -184,9 +186,81 @@ setInterval(() => {
     }
 }, 60 * 1000).unref();
 
+// 基于步骤的可报告进度压缩
+interface ProgressJob {
+    id: string; // jobId (独立于客户端传的 queueId)
+    clientId: string; // 前端项 id
+    originalName: string;
+    mime: string;
+    buffer: Buffer;
+    quality: number;
+    created: number;
+    phase: "queued" | "decoding" | "resizing" | "encoding" | "finalizing" | "done" | "error";
+    progress: number; // 0-1
+    resultId?: string; // cache id
+    compressedSize?: number;
+    downloadUrl?: string;
+    error?: string;
+}
+const JOBS = new Map<string, ProgressJob>();
+
+async function processJob(job: ProgressJob) {
+    try {
+        job.phase = "decoding";
+        job.progress = 0.05;
+        const meta = await sharp(job.buffer).metadata();
+        const totalPixels = (meta.width || 0) * (meta.height || 0);
+        if (totalPixels > 80_000_000) throw new Error("dimensions_too_large");
+        const MAX_PIXELS = Number(process.env.MAX_PIXELS || 35_000_000);
+        let workBuffer = job.buffer;
+        let scaled = false;
+        if (totalPixels > MAX_PIXELS && meta.width && meta.height) {
+            job.phase = "resizing";
+            job.progress = 0.15;
+            const scale = Math.sqrt(MAX_PIXELS / totalPixels);
+            const targetW = Math.max(1, Math.floor(meta.width * scale));
+            const targetH = Math.max(1, Math.floor(meta.height * scale));
+            workBuffer = await sharp(job.buffer, { failOn: "warning" }).resize({ width: targetW, height: targetH, fit: "inside" }).toBuffer();
+            scaled = true;
+            job.progress = 0.4;
+        }
+        job.phase = "encoding";
+        job.progress = Math.max(job.progress, 0.45);
+        let encoder = sharp(workBuffer, { failOn: "warning" });
+        if (job.mime.includes("jpeg")) encoder = encoder.jpeg({ quality: job.quality, mozjpeg: true });
+        else if (job.mime.includes("png")) encoder = encoder.png({ quality: job.quality, compressionLevel: 9, palette: true });
+        else if (job.mime.includes("webp")) encoder = encoder.webp({ quality: job.quality });
+        const FILE_TIMEOUT_MS = Number(process.env.FILE_TIMEOUT_MS || 30000);
+        const encoded = await Promise.race([encoder.toBuffer(), new Promise<Buffer>((resolve) => setTimeout(() => resolve(Buffer.from([])), FILE_TIMEOUT_MS))]);
+        if (!encoded.length) throw new Error("timeout");
+        let finalBuffer = encoded;
+        if (!scaled && encoded.length >= job.buffer.length) finalBuffer = job.buffer; // 不放大
+        job.phase = "finalizing";
+        job.progress = 0.95;
+        if (!evictIfNeeded(finalBuffer.length)) throw new Error("cache_overflow");
+        const resultId = job.clientId; // 使用客户端 id 作为缓存 key 以便重压缩覆盖
+        RESULT_CACHE.set(resultId, { buffer: finalBuffer, mime: job.mime, filename: job.originalName, size: finalBuffer.length, created: Date.now() });
+        job.phase = "done";
+        job.progress = 1;
+        job.resultId = resultId;
+        job.compressedSize = finalBuffer.length;
+        job.downloadUrl = `/api/download/${resultId}`;
+    } catch (e: any) {
+        job.phase = "error";
+        job.error = e.message || "compress_failed";
+        job.progress = 1;
+    }
+}
+
+function scheduleJob(job: ProgressJob) {
+    // 立即异步执行，不阻塞主请求
+    setImmediate(() => processJob(job));
+}
+
 app.post("/api/compress", upload.array("files"), async (req, res, next) => {
     const qualityRaw = Number(req.query.quality);
     const quality = Number.isFinite(qualityRaw) ? Math.min(100, Math.max(1, qualityRaw)) : 70;
+    const wantProgress = req.query.progress === "1"; // 是否启用异步进度模式
     const inputFiles = (req.files as Express.Multer.File[]) || [];
     // 解析前端提供的 originalName -> clientId 映射（避免同名随机 ID 不匹配）
     let clientMap: Record<string, string> = {};
@@ -209,8 +283,10 @@ app.post("/api/compress", upload.array("files"), async (req, res, next) => {
     const limit = createLimiter(4); // 可调 4~8
 
     const ID_SEP = "__IDSEP__"; // 与前端协同的 id 分隔符
-    const tasks: Promise<CompressItemResult>[] = inputFiles.map((f) =>
-        limit(async () => {
+    if (wantProgress) {
+        // 创建异步 job 返回 jobId
+        const jobsResp: any[] = [];
+        for (const f of inputFiles) {
             let originalName = f.originalname;
             let embeddedId: string | undefined;
             const sepIndex = originalName.indexOf(ID_SEP);
@@ -219,25 +295,79 @@ app.post("/api/compress", upload.array("files"), async (req, res, next) => {
                 originalName = originalName.slice(sepIndex + ID_SEP.length);
             }
             const clientId = embeddedId || clientMap[originalName] || crypto.randomUUID();
-            (f as any).originalname = originalName;
-            return compressBuffer(clientId, originalName, f.mimetype, f.buffer, quality);
-        })
-    );
-    try {
-        const settled = await Promise.all(tasks);
-        const success = settled.filter((i: any) => !("error" in i)).length;
-        const failed = settled.length - success;
-        const body: CompressResponse = {
-            quality,
-            count: settled.length,
-            success,
-            failed,
-            items: settled
-        };
-        res.json(body);
-    } catch (e: any) {
-        return next(e);
+            const jobId = crypto.randomUUID();
+            const job: ProgressJob = {
+                id: jobId,
+                clientId,
+                originalName,
+                mime: f.mimetype,
+                buffer: f.buffer,
+                quality,
+                created: Date.now(),
+                phase: "queued",
+                progress: 0
+            };
+            JOBS.set(jobId, job);
+            scheduleJob(job);
+            jobsResp.push({ id: clientId, jobId, originalName });
+        }
+        return res.json({ async: true, quality, count: jobsResp.length, items: jobsResp });
+    } else {
+        const tasks: Promise<CompressItemResult>[] = inputFiles.map((f) =>
+            limit(async () => {
+                let originalName = f.originalname;
+                let embeddedId: string | undefined;
+                const sepIndex = originalName.indexOf(ID_SEP);
+                if (sepIndex > -1) {
+                    embeddedId = originalName.slice(0, sepIndex);
+                    originalName = originalName.slice(sepIndex + ID_SEP.length);
+                }
+                const clientId = embeddedId || clientMap[originalName] || crypto.randomUUID();
+                (f as any).originalname = originalName;
+                return compressBuffer(clientId, originalName, f.mimetype, f.buffer, quality);
+            })
+        );
+        try {
+            const settled = await Promise.all(tasks);
+            const success = settled.filter((i: any) => !("error" in i)).length;
+            const failed = settled.length - success;
+            const body: CompressResponse = { quality, count: settled.length, success, failed, items: settled };
+            res.json(body);
+        } catch (e: any) {
+            return next(e);
+        }
     }
+});
+
+// 轮询单个 job 状态
+app.get("/api/job/:jobId", (req, res) => {
+    const job = JOBS.get(req.params.jobId);
+    if (!job) return res.status(404).json({ error: "not_found" });
+    res.json({
+        jobId: job.id,
+        id: job.clientId,
+        phase: job.phase,
+        progress: job.progress,
+        error: job.error,
+        downloadUrl: job.downloadUrl,
+        compressedSize: job.compressedSize
+    });
+    // 成功或失败可选择清理缓存在一定时间后，这里保留 2 分钟
+    if ((job.phase === "done" || job.phase === "error") && Date.now() - job.created > 2 * 60 * 1000) {
+        JOBS.delete(job.id);
+    }
+});
+
+// 批量查询进度 ?ids=jobId1,jobId2
+app.get("/api/jobs", (req, res) => {
+    const idsParam = (req.query.ids as string) || "";
+    const ids = idsParam.split(",").filter(Boolean);
+    const list = ids.map((id) => {
+        const job = JOBS.get(id);
+        if (!job) return { jobId: id, missing: true };
+        return { jobId: id, id: job.clientId, phase: job.phase, progress: job.progress, error: job.error, downloadUrl: job.downloadUrl, compressedSize: job.compressedSize };
+    });
+    res.json({ items: list });
 });
 
 // 统一错误处理（包括 multer 限制）
@@ -271,7 +401,7 @@ app.get("/api/download/:id", (req, res) => {
 
 // --- 分块上传接口 ---
 app.post("/api/upload/init", express.json(), (req, res) => {
-    const { filename, size, mime, totalChunks, quality, hash } = req.body || {};
+    const { filename, size, mime, totalChunks, quality, hash, clientId } = req.body || {};
     if (!filename || !Number.isFinite(size) || !mime || !Number.isFinite(totalChunks)) {
         return res.status(400).json({ error: "bad_request" });
     }
@@ -330,7 +460,8 @@ app.post("/api/upload/init", express.json(), (req, res) => {
         created: now,
         updated: now,
         quality: q,
-        hash
+        hash,
+        clientId: typeof clientId === "string" && clientId ? clientId : undefined
     });
     res.json({ uploadId: id, resume: false, receivedBytes: 0, receivedIndices: [] });
 });
@@ -362,7 +493,7 @@ app.post("/api/upload/chunk", chunkUpload.single("chunk"), (req, res) => {
 });
 
 app.post("/api/upload/complete", async (req, res) => {
-    const { uploadId, quality } = req.query as Record<string, string>;
+    const { uploadId, quality, progress } = req.query as Record<string, string>;
     if (!uploadId) return res.status(400).json({ error: "bad_request" });
     const session = UPLOAD_SESSIONS.get(uploadId);
     if (!session) return res.status(404).json({ error: "upload_not_found" });
@@ -380,6 +511,27 @@ app.post("/api/upload/complete", async (req, res) => {
     // 释放内存（尽快）
     UPLOAD_SESSIONS.delete(uploadId);
     const q = Math.min(100, Math.max(1, Number(quality) || session.quality || 70));
-    const result = await compressBuffer(uploadId, session.filename, session.mime, full, q, session.hash);
-    return res.json({ item: result, quality: q });
+    if (progress === "1") {
+        // 异步 job 路径
+        const clientId = session.clientId || uploadId;
+        const jobId = crypto.randomUUID();
+        const job: ProgressJob = {
+            id: jobId,
+            clientId,
+            originalName: session.filename,
+            mime: session.mime,
+            buffer: full,
+            quality: q,
+            created: Date.now(),
+            phase: "queued",
+            progress: 0
+        };
+        JOBS.set(jobId, job);
+        scheduleJob(job);
+        return res.json({ async: true, jobId, id: clientId, quality: q });
+    } else {
+        const clientId = session.clientId || uploadId;
+        const result = await compressBuffer(clientId, session.filename, session.mime, full, q, session.hash);
+        return res.json({ item: result, quality: q });
+    }
 });

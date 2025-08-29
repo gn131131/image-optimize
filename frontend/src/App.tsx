@@ -8,6 +8,14 @@ import CompareSlider from "./components/CompareSlider";
 import { generateId } from "./utils/uuid";
 import { chunkUploadFile, hashFileSHA256 } from "./utils/chunkUpload";
 
+// 允许的图片类型与大小限制（前后端需保持一致）
+const ALLOWED_MIME: readonly string[] = ["image/jpeg", "image/png", "image/webp"]; // 仅用于 includes 判定
+const LIMITS = {
+    MAX_SINGLE: 50 * 1024 * 1024,
+    MAX_TOTAL: 200 * 1024 * 1024,
+    MAX_FILES: 30
+};
+
 function mapError(code: string): string {
     switch (code) {
         case "file_too_large":
@@ -32,6 +40,7 @@ function mapError(code: string): string {
 const App: React.FC = () => {
     const [items, setItems] = useState<QueueItem[]>([]);
     const [compare, setCompare] = useState<QueueItem | null>(null);
+    const [theme, setTheme] = useState<"dark" | "light">(() => (typeof localStorage !== "undefined" ? (localStorage.getItem("theme") as "dark" | "light") || "dark" : "dark"));
     // 后端基址：
     // 优先使用 VITE_API_BASE；未设置时在生产回退到同源(使用相对路径)，在开发回退到 http://localhost:3001
     const [serverUrl] = useState<string>(() => {
@@ -50,22 +59,28 @@ const App: React.FC = () => {
         setTimeout(() => setMessage((cur) => (cur === m ? null : cur)), 4000);
     }, []);
 
+    // 应用主题到 html data-theme
+    useEffect(() => {
+        document.documentElement.dataset.theme = theme;
+        try {
+            localStorage.setItem("theme", theme);
+        } catch {}
+    }, [theme]);
+
+    const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
+
     // --- 添加文件（初始 pending，稍后批量发送） ---
     const addFiles = useCallback(
         async (files: File[]) => {
             if (!files.length) return;
-            const ALLOWED = ["image/jpeg", "image/png", "image/webp"];
-            const MAX_SINGLE = 50 * 1024 * 1024; // 普通批量接口限制
-            const MAX_TOTAL = 200 * 1024 * 1024;
-            const MAX_FILES = 30;
             const existing = items.length;
             const filtered: File[] = [];
             let totalAdd = 0;
             for (const f of files) {
-                if (!ALLOWED.includes(f.type)) continue;
-                if (f.size > MAX_SINGLE) continue;
-                if (existing + filtered.length >= MAX_FILES) break;
-                if (totalAdd + f.size > MAX_TOTAL) break;
+                if (!ALLOWED_MIME.includes(f.type)) continue;
+                if (f.size > LIMITS.MAX_SINGLE) continue;
+                if (existing + filtered.length >= LIMITS.MAX_FILES) break;
+                if (totalAdd + f.size > LIMITS.MAX_TOTAL) break;
                 filtered.push(f);
                 totalAdd += f.size;
             }
@@ -76,7 +91,7 @@ const App: React.FC = () => {
                     if (f.type.includes("jpeg")) dq = 85; // JPEG 80~85 视觉接近原图
                     else if (f.type.includes("png")) dq = 85; // PNG palette 时质量影响量化，可取较高
                     else if (f.type.includes("webp")) dq = 80; // WebP 80 基本接近原图
-                    const isChunked = f.size > MAX_SINGLE; // 超过普通接口限制则走分块
+                    const isChunked = f.size > LIMITS.MAX_SINGLE; // 超过普通接口限制则走分块
                     return {
                         id: generateId(),
                         file: f,
@@ -149,8 +164,7 @@ const App: React.FC = () => {
                         setItems((prev) =>
                             prev.map((p) => {
                                 if (!targetIds.has(p.id)) return p;
-                                const seg = sizePrefix.find((s) => s.id === p.id)!;
-                                if (!seg) return p;
+                                const seg = sizePrefix.find((s) => s.id === p.id)!; // 一定存在
                                 const segLoaded = Math.min(Math.max(0, loaded - seg.start), seg.end - seg.start);
                                 const segPct = Math.min(1, segLoaded / (seg.end - seg.start));
                                 const phase = loaded >= totalSize ? "compress" : "upload";
@@ -213,7 +227,7 @@ const App: React.FC = () => {
             } catch (e: any) {
                 if (e.message === "已取消") return;
                 showMsg(e.message || "上传失败");
-                setItems((prev) => prev.map((i) => (targetIds.has(i.id) ? { ...i, status: "error", error: e.message, recompressing: false, progress: undefined } : i)));
+                setItems((prev) => prev.map((i) => (targetIds.has(i.id) ? { ...i, status: "error", error: e.message, recompressing: false, progress: undefined, phase: "error" } : i)));
             } finally {
                 setBatching(false);
             }
@@ -295,32 +309,7 @@ const App: React.FC = () => {
                                     : p
                             )
                         );
-                        return;
-                    }
-                    // 4. 正常完成 - 下载结果
-                    if (item && !item.error && item.downloadUrl) {
-                        setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, phase: "download", uploadPercent: 100 } : p)));
-                        const bResp = await fetch(`${serverUrl}${item.downloadUrl}`);
-                        if (!bResp.ok) throw new Error("结果下载失败");
-                        const blob = await bResp.blob();
-                        setItems((prev) =>
-                            prev.map((p) =>
-                                p.id === it.id
-                                    ? {
-                                          ...p,
-                                          compressedBlob: blob,
-                                          compressedSize: item.compressedSize,
-                                          downloadUrl: item.downloadUrl,
-                                          status: "done",
-                                          lastQuality: p.quality,
-                                          chunkUploadId: uploadId,
-                                          chunkProgress: 1,
-                                          phase: "done",
-                                          uploadPercent: 100
-                                      }
-                                    : p
-                            )
-                        );
+                        return; // 秒传处理完成后结束该任务
                     } else if (item?.error) {
                         setItems((prev) =>
                             prev.map((p) =>
@@ -412,7 +401,12 @@ const App: React.FC = () => {
     return (
         <>
             <header>
-                <h2>在线图片压缩 (服务端处理)</h2>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1.5rem", flexWrap: "wrap" }}>
+                    <h1 style={{ fontSize: "1.55rem", letterSpacing: ".5px", margin: 0 }}>图片压缩工具</h1>
+                    <button onClick={toggleTheme} className="sm-btn" aria-label="切换主题" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                        {theme === "dark" ? "🌙 深色" : "☀️ 浅色"}
+                    </button>
+                </div>
             </header>
             <div className="container">
                 <UploadArea onFiles={addFiles} onRejectInfo={showMsg} />
@@ -465,9 +459,30 @@ const App: React.FC = () => {
                             onResumeChunk={resumeChunk}
                         />
                     ))}
-                    {!items.length && <div className="empty-hint">暂无图片，拖拽或点击上方区域添加</div>}
+                    {!items.length && (
+                        <div className="empty-hero">
+                            <div className="empty-hero-inner">
+                                <div className="icon-wrap">
+                                    <svg width="54" height="54" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <rect x="6" y="10" width="52" height="44" rx="8" fill="url(#g1)" stroke="#2d3a45" strokeWidth="2" />
+                                        <path d="M20 40L28 30L38 38L46 28L56 40" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" opacity=".9" />
+                                        <circle cx="26" cy="23" r="5" fill="#ffffff" opacity="0.85" />
+                                        <defs>
+                                            <linearGradient id="g1" x1="6" y1="10" x2="58" y2="54" gradientUnits="userSpaceOnUse">
+                                                <stop stopColor="#253545" />
+                                                <stop offset="1" stopColor="#1a242e" />
+                                            </linearGradient>
+                                        </defs>
+                                    </svg>
+                                </div>
+                                <h3>拖拽或点击上方区域添加图片</h3>
+                                <p>支持 JPG / PNG / WebP，单文件 ≤ 50MB，总大小 ≤ 200MB。</p>
+                                <p style={{ opacity: 0.7 }}>图片仅用于即时压缩处理，不被持久保存。</p>
+                            </div>
+                        </div>
+                    )}
                 </div>
-                <div style={{ marginTop: "2.2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
+                <div style={{ marginTop: "2.2rem", display: items.length ? "flex" : "none", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
                     {compare ? (
                         <>
                             <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
@@ -493,7 +508,7 @@ const App: React.FC = () => {
                                 >
                                     应用
                                 </button>
-                                {compare.recompressing && <span style={{ fontSize: ".65rem", color: "#4ea1ff" }}>重新压缩中...</span>}
+                                {/* 重新压缩与首次压缩统一到每个文件条目内的进度/阶段指示，不单独显示文字 */}
                             </div>
                             <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
                                 <div style={{ transform: "scale(1.05)", maxWidth: 900, width: "100%" }}>
@@ -501,18 +516,18 @@ const App: React.FC = () => {
                                 </div>
                             </div>
                         </>
-                    ) : items.length ? (
-                        <div className="empty-hint" style={{ padding: "1rem", border: "1px dashed #333", borderRadius: 8 }}>
-                            请选择图片
-                        </div>
                     ) : (
-                        <div className="empty-hint" style={{ padding: "2rem", border: "1px dashed #333", borderRadius: 8 }}>
-                            上传图片后这里显示实时对比
-                        </div>
+                        items.length > 0 && (
+                            <div className="empty-hint" style={{ padding: "1rem", border: "1px dashed #333", borderRadius: 8 }}>
+                                请选择图片
+                            </div>
+                        )
                     )}
                 </div>
             </div>
-            <footer style={{ textAlign: "center", padding: "2rem 0", fontSize: ".7rem", opacity: 0.5 }}>本工具通过服务器端进行压缩，保持输入输出格式一致。</footer>
+            <footer style={{ textAlign: "center", padding: "2rem 0", fontSize: ".68rem", opacity: 0.55, lineHeight: 1.5 }}>
+                隐私说明：图片仅在内存中即时处理，压缩完成即被清理，不会持久存储或用于模型训练。
+            </footer>
         </>
     );
 };

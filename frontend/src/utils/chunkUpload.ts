@@ -1,4 +1,4 @@
-import { QueueItem } from "../types";
+// 仅提供分块上传与哈希功能，无需额外类型依赖。
 
 export interface ChunkUploadOptions {
     serverBase: string; // 不含末尾 /

@@ -14,13 +14,7 @@ interface Props {
     onResumeChunk?: (item: QueueItem) => void;
 }
 
-const statusColor: Record<string, string> = {
-    pending: "#666d78",
-    compressing: "#1d6fd9",
-    done: "#2f9d59",
-    error: "#d9463b"
-};
-// 状态文字取消，采用左侧色条 + 动画表示
+// 左侧色条 + 动画表示状态，移除未使用的颜色映射。
 
 const ImageItem: React.FC<Props> = ({ item, selected, onSelect, onRemove, onDownload, onRetry, batching, onCancelChunk, onResumeChunk }) => {
     const diffPct = item.compressedSize && item.originalSize ? ((item.compressedSize - item.originalSize) / item.originalSize) * 100 : 0;
@@ -91,34 +85,31 @@ const ImageItem: React.FC<Props> = ({ item, selected, onSelect, onRemove, onDown
                 )}
                 {item.error && <div style={{ color: "#ff6b6b", fontSize: ".68rem" }}>{item.error}</div>}
                 {/* 压缩阶段动画指示：当 phase=compress 且尚未 done */}
-                {item.status === "compressing" && item.phase === "compress" && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: ".62rem", color: "#6ab7ff" }}>
-                        <span style={{ width: 10, height: 10, borderRadius: 3, background: "linear-gradient(135deg,#1d6fd9,#3d9dff)", position: "relative", overflow: "hidden" }}>
-                            <span
-                                style={{
-                                    position: "absolute",
-                                    inset: 0,
-                                    background: "linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.85) 50%,rgba(255,255,255,0) 100%)",
-                                    animation: "mini-slide 1s linear infinite"
-                                }}
-                            />
-                        </span>
-                        <span>压缩中...</span>
-                    </div>
-                )}
-                {item.recompressing && item.status === "compressing" && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: ".62rem", color: "#ffc266" }}>
+                {item.status === "compressing" && (item.phase === "compress" || (item.recompressing && !item.error)) && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: ".62rem", color: item.recompressing ? "#ffc266" : "#6ab7ff" }}>
                         <span
                             style={{
                                 width: 10,
                                 height: 10,
-                                borderRadius: "50%",
-                                background: "linear-gradient(135deg,#ff9800,#ffcc66)",
+                                borderRadius: 3,
+                                background: item.recompressing ? "linear-gradient(135deg,#ff9800,#ffcc66)" : "linear-gradient(135deg,#1d6fd9,#3d9dff)",
                                 position: "relative",
-                                animation: "pulse 1.1s ease-in-out infinite"
+                                overflow: "hidden",
+                                animation: item.recompressing ? "pulse 1.1s ease-in-out infinite" : "none"
                             }}
-                        />
-                        <span>重新压缩中...</span>
+                        >
+                            {!item.recompressing && (
+                                <span
+                                    style={{
+                                        position: "absolute",
+                                        inset: 0,
+                                        background: "linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.85) 50%,rgba(255,255,255,0) 100%)",
+                                        animation: "mini-slide 1s linear infinite"
+                                    }}
+                                />
+                            )}
+                        </span>
+                        <span>压缩中...</span>
                     </div>
                 )}
             </div>

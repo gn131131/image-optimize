@@ -117,16 +117,32 @@ header {
     transition: background 0.25s, box-shadow 0.25s, transform 0.18s;
 }
 .image-item:hover {
-    box-shadow: 0 0 0 2px var(--accent);
-    background: linear-gradient(145deg, var(--bg-panel-alt), var(--bg-panel));
+    /* 去掉蓝色边框，改为微提升阴影与轻内高光 */
+    box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+    background: linear-gradient(145deg, var(--bg-panel), var(--bg-panel-alt));
 }
 .image-item.selected {
-    box-shadow: 0 0 0 2px var(--border-color-soft), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
-    background: linear-gradient(145deg, var(--bg-panel-alt), var(--bg-panel));
+    box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06) inset, 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+    background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 10%, var(--bg-panel-alt)) 0%, var(--bg-panel) 85%);
+    position: relative;
+}
+.image-item.selected::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, transparent), transparent 68%);
+    pointer-events: none;
+    mix-blend-mode: overlay;
+    opacity: 0.9;
 }
 :root[data-theme="light"] .image-item.selected {
-    box-shadow: 0 0 0 2px #d4dde5 inset, 0 0 0 1px rgba(255, 255, 255, 0.55);
-    background: linear-gradient(145deg, #f8fbfe, #eef3f7);
+    box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.8) inset, 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+    background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 13%, #f8fbfe) 0%, #f5f9fc 85%);
+}
+:root[data-theme="light"] .image-item.selected::after {
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%);
+    opacity: 0.65;
 }
 .thumb {
     width: 82px;
@@ -311,8 +327,8 @@ button {
 
 /* 深色 item hover 保留原效果；浅色单独定义 */
 :root[data-theme="dark"] .image-item:hover {
-    box-shadow: 0 0 0 2px var(--accent), 0 0 0 6px rgba(61, 145, 255, 0.15);
-    background: linear-gradient(145deg, #243543, #172128);
+    box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+    background: linear-gradient(145deg, #222d35, #182228);
     transform: none;
 }
 /* --- Light 模式视觉简化：弱化阴影，改为细描边 + 浅色高亮 --- */
@@ -325,8 +341,8 @@ button {
     border: 1px solid #d9e2ea;
 }
 :root[data-theme="light"] .image-item:hover {
-    box-shadow: 0 0 0 2px var(--accent);
-    background: linear-gradient(145deg, #ffffff, #edf3f8);
+    box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.04) inset;
+    background: linear-gradient(145deg, #ffffff, #f0f5f9);
     transform: none;
 }
 :root[data-theme="light"] button {
@@ -568,6 +584,10 @@ button.danger:hover:not(:disabled) {
     background: #666d78;
     overflow: hidden;
 }
+.image-item.selected .status-bar {
+    width: 10px;
+    box-shadow: 0 0 6px -1px color-mix(in srgb, var(--accent) 55%, transparent);
+}
 .image-item.status-pending .status-bar {
     background: linear-gradient(180deg, #5d6874, #48535e);
 }
@@ -631,6 +651,46 @@ button.danger:hover:not(:disabled) {
 .size-diff {
     opacity: 0.85;
 }
+/* 进度条基样式（深色） */
+.progress-track {
+    position: relative;
+    width: 100%;
+    background: #20242a;
+    border-radius: 4px;
+    overflow: hidden;
+    height: 18px;
+    box-shadow: 0 0 0 1px #30363d inset;
+}
+.progress-label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.62rem;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    color: #fff;
+    mix-blend-mode: plus-lighter;
+    pointer-events: none;
+}
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #1d6fd9, #3d8bff);
+    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* 浅色主题进度条颜色调整：更浅背景，更柔和描边与渐变 */
+:root[data-theme="light"] .progress-track {
+    background: #e1e9f0;
+    box-shadow: 0 0 0 1px #c1ccd5 inset;
+}
+:root[data-theme="light"] .progress-label {
+    color: #24507a;
+    mix-blend-mode: normal;
+}
+:root[data-theme="light"] .progress-fill {
+    background: linear-gradient(90deg, #1d6fd9, #64aef5);
+}
 
 /* 空 Compare 占位插画 */
 .compare-wrapper.empty {
@@ -660,4 +720,14 @@ button.danger:hover:not(:disabled) {
 :root[data-theme="light"] .compare-wrapper.empty::before {
     background: repeating-conic-gradient(#eef3f7 0deg 15deg, #e4e9ee 15deg 30deg);
     opacity: 0.55;
+}
+
+/* 深色模式激活态额外强化（不使用纯蓝描边，改为柔和外散光与角标） */
+:root[data-theme="dark"] .image-item.selected {
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05) inset, 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), 0 8px 22px -10px rgba(0, 0, 0, 0.75),
+        0 0 18px -6px color-mix(in srgb, var(--accent) 45%, transparent);
+    background: linear-gradient(155deg, color-mix(in srgb, var(--accent) 20%, var(--bg-panel-alt)) 0%, color-mix(in srgb, var(--accent) 8%, var(--bg-panel)) 90%);
+}
+:root[data-theme="dark"] .image-item.selected .file-name {
+    color: #ffffff;
 }

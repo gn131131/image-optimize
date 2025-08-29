@@ -5,6 +5,7 @@ import { formatBytes, readFileAsDataUrl } from "./utils/compress";
 import { downloadSingle, downloadZip } from "./utils/download";
 import ImageItem from "./components/ImageItem";
 import CompareSlider from "./components/CompareSlider";
+import QualityPanel from "./components/QualityPanel";
 import { generateId } from "./utils/uuid";
 import { chunkUploadFile, hashFileSHA256 } from "./utils/chunkUpload";
 
@@ -463,38 +464,11 @@ const App: React.FC = () => {
                 </div>
                 <div style={{ marginTop: "2.2rem", display: items.length ? "flex" : "none", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
                     {compare ? (
-                        <>
-                            <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                                <label style={{ fontSize: ".85rem" }}>质量</label>
-                                <input
-                                    type="range"
-                                    min={1}
-                                    max={100}
-                                    value={compare.quality}
-                                    onChange={(e) => {
-                                        const v = Number(e.target.value);
-                                        setItems((prev) => prev.map((p) => (p.id === compare.id ? { ...p, quality: v } : p)));
-                                        setCompare((c) => (c && c.id === compare.id ? { ...c, quality: v } : c));
-                                    }}
-                                    style={{ width: 360 }}
-                                />
-                                <span style={{ fontSize: ".85rem", width: 40, textAlign: "center", fontWeight: 600 }}>{compare.quality}</span>
-                                <button
-                                    className="primary"
-                                    style={{ padding: ".46rem .95rem" }}
-                                    disabled={batching || compare.recompressing || compare.quality === compare.lastQuality}
-                                    onClick={applyQuality}
-                                >
-                                    应用
-                                </button>
-                                {/* 重新压缩与首次压缩统一到每个文件条目内的进度/阶段指示，不单独显示文字 */}
+                        <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
+                            <div style={{ transform: "scale(1.05)", maxWidth: 900, width: "100%" }}>
+                                <CompareObject compare={compare} />
                             </div>
-                            <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
-                                <div style={{ transform: "scale(1.05)", maxWidth: 900, width: "100%" }}>
-                                    <CompareObject compare={compare} />
-                                </div>
-                            </div>
-                        </>
+                        </div>
                     ) : (
                         items.length > 0 && (
                             <div className="empty-hint" style={{ padding: "1rem", border: "1px dashed #333", borderRadius: 8 }}>
@@ -504,6 +478,17 @@ const App: React.FC = () => {
                     )}
                 </div>
             </div>
+            {/* 垂直质量控制面板 */}
+            <QualityPanel
+                item={compare}
+                onQuality={(v) => {
+                    if (!compare) return;
+                    setItems((prev) => prev.map((p) => (p.id === compare.id ? { ...p, quality: v } : p)));
+                    setCompare((c) => (c && c.id === compare.id ? { ...c, quality: v } : c));
+                }}
+                onApply={applyQuality}
+                disabled={batching}
+            />
             <footer style={{ textAlign: "center", padding: "2rem 0", fontSize: ".68rem", opacity: 0.55, lineHeight: 1.5 }}>
                 隐私说明：图片仅在内存中即时处理，压缩完成即被清理，不会持久存储或用于模型训练。
             </footer>

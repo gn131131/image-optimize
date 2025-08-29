@@ -462,32 +462,50 @@ const App: React.FC = () => {
                     ))}
                     {/* 空列表时不再显示下方第二拖拽提示，避免视觉重复 */}
                 </div>
-                <div style={{ marginTop: "2.2rem", display: items.length ? "flex" : "none", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
-                    {compare ? (
-                        <div className="compare-area" style={{ width: "100%", display: "flex", justifyContent: "center", position: "relative" }}>
-                            <div className="compare-stage" style={{ transform: "scale(1.05)", maxWidth: 900, width: "100%", position: "relative" }}>
-                                <CompareObject compare={compare} />
-                                <div className="quality-dock">
-                                    <QualityPanel
-                                        item={compare}
-                                        onQuality={(v) => {
-                                            if (!compare) return;
-                                            setItems((prev) => prev.map((p) => (p.id === compare.id ? { ...p, quality: v } : p)));
-                                            setCompare((c) => (c && c.id === compare.id ? { ...c, quality: v } : c));
-                                        }}
-                                        onApply={applyQuality}
-                                        disabled={batching}
-                                    />
+                <div style={{ marginTop: "2.2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
+                    <div className="compare-area" style={{ width: "100%", display: "flex", justifyContent: "center", position: "relative" }}>
+                        <div className="compare-stage" style={{ maxWidth: 900, width: "100%", position: "relative" }}>
+                            {compare ? (
+                                <>
+                                    <CompareObject compare={compare} />
+                                    <div className="quality-dock">
+                                        <QualityPanel
+                                            item={compare}
+                                            onQuality={(v) => {
+                                                if (!compare) return;
+                                                setItems((prev) => prev.map((p) => (p.id === compare.id ? { ...p, quality: v } : p)));
+                                                setCompare((c) => (c && c.id === compare.id ? { ...c, quality: v } : c));
+                                            }}
+                                            onApply={applyQuality}
+                                            disabled={batching}
+                                        />
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="compare-wrapper empty">
+                                    <div className="ph-illu" aria-hidden="true">
+                                        <svg width="150" height="110" viewBox="0 0 300 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <defs>
+                                                <linearGradient id="phg1" x1="0" y1="0" x2="300" y2="220" gradientUnits="userSpaceOnUse">
+                                                    <stop stopColor="var(--accent)" stopOpacity="0.55" />
+                                                    <stop offset="1" stopColor="var(--accent-strong)" stopOpacity="0.2" />
+                                                </linearGradient>
+                                                <linearGradient id="phg2" x1="80" y1="60" x2="220" y2="180" gradientUnits="userSpaceOnUse">
+                                                    <stop stopColor="#ffffff" stopOpacity="0.85" />
+                                                    <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
+                                                </linearGradient>
+                                            </defs>
+                                            <rect x="28" y="34" width="244" height="152" rx="26" fill="url(#phg1)" opacity="0.22" />
+                                            <rect x="54" y="58" width="192" height="104" rx="18" stroke="var(--accent)" strokeDasharray="6 10" strokeWidth="4" opacity="0.35" />
+                                            <path d="M90 146l40-44 34 34 44-58 36 68" stroke="var(--accent)" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" opacity="0.55" />
+                                            <circle cx="140" cy="94" r="18" fill="url(#phg2)" opacity="0.65" />
+                                        </svg>
+                                    </div>
+                                    <div className="ph-text">拖拽或添加图片以开始对比</div>
                                 </div>
-                            </div>
+                            )}
                         </div>
-                    ) : (
-                        items.length > 0 && (
-                            <div className="empty-hint" style={{ padding: "1rem", border: "1px dashed #333", borderRadius: 8 }}>
-                                请选择图片
-                            </div>
-                        )
-                    )}
+                    </div>
                 </div>
             </div>
             <footer style={{ textAlign: "center", padding: "2rem 0", fontSize: ".68rem", opacity: 0.55, lineHeight: 1.5 }}>

@@ -97,27 +97,37 @@ const App: React.FC = () => {
                             <button className="danger" onClick={wrappedClear} disabled={!items.length}>
                                 清空队列
                             </button>
-                            <span style={{ fontSize: ".78rem", opacity: 0.75 }}>
+                            <span style={{ fontSize: ".78rem", opacity: 0.75, whiteSpace: "nowrap" }}>
                                 合计原始: {formatBytes(items.reduce((a, b) => a + b.originalSize, 0))} / 压缩后: {formatBytes(items.reduce((a, b) => a + (b.compressedSize || 0), 0))}
                             </span>
-                        </div>
-                        {selectedItem && selectedItem.status === "done" && (
-                            <div className="file-info-panel flat" style={{ marginTop: ".65rem", marginBottom: ".4rem" }}>
-                                <div className="fip-row">
-                                    <span className="fip-name" title={selectedItem.file.name}>
+                            {selectedItem && selectedItem.status === "done" && (
+                                <span
+                                    style={{
+                                        marginLeft: "1.75rem",
+                                        fontSize: ".72rem",
+                                        opacity: 0.82,
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "0.55rem",
+                                        whiteSpace: "nowrap",
+                                        maxWidth: "100%",
+                                        overflow: "hidden"
+                                    }}
+                                >
+                                    <span style={{ maxWidth: "32ch", overflow: "hidden", textOverflow: "ellipsis" }} title={selectedItem.file.name}>
                                         {selectedItem.file.name}
                                     </span>
-                                </div>
-                                {selectedItem.compressedSize && (
-                                    <div className="fip-row sizes">
-                                        <span className="fip-size-orig">{formatBytes(selectedItem.originalSize)}</span>
-                                        <span className="fip-arrow">→</span>
-                                        <span className="fip-size-comp">{formatBytes(selectedItem.compressedSize)}</span>
-                                        <span className="fip-ratio">{((selectedItem.compressedSize / selectedItem.originalSize) * 100).toFixed(1)}%</span>
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                                    {selectedItem.compressedSize && (
+                                        <>
+                                            <span>{formatBytes(selectedItem.originalSize)}</span>
+                                            <span style={{ opacity: 0.55 }}>→</span>
+                                            <span>{formatBytes(selectedItem.compressedSize)}</span>
+                                            <span style={{ opacity: 0.65 }}>{((selectedItem.compressedSize / selectedItem.originalSize) * 100).toFixed(1)}%</span>
+                                        </>
+                                    )}
+                                </span>
+                            )}
+                        </div>
                         <ThumbCarousel
                             items={items}
                             selectedId={selectedId || undefined}
@@ -127,16 +137,6 @@ const App: React.FC = () => {
                             }}
                             onRemove={wrappedRemove}
                         />
-                        {selectedItem && selectedItem.status === "done" && (
-                            <div className="file-info-panel" style={{ marginTop: ".75rem", display: "flex", flexWrap: "wrap", gap: "1.2rem", fontSize: ".75rem", alignItems: "center" }}>
-                                <span style={{ fontWeight: 600, maxWidth: "40ch", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={selectedItem.file.name}>
-                                    文件: {selectedItem.file.name}
-                                </span>
-                                <span>原始: {formatBytes(selectedItem.originalSize)}</span>
-                                <span>压缩后: {selectedItem.compressedSize ? formatBytes(selectedItem.compressedSize) : "—"}</span>
-                                {selectedItem.compressedSize && <span>比例: {((selectedItem.compressedSize / selectedItem.originalSize) * 100).toFixed(1)}%</span>}
-                            </div>
-                        )}
                         {selectedItem && selectedItem.status === "done" && (
                             <div style={{ marginTop: "2.2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
                                 <div className="compare-area" style={{ width: "100%", display: "flex", justifyContent: "center", position: "relative" }}>

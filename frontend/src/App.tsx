@@ -465,7 +465,7 @@ const App: React.FC = () => {
                 <div style={{ marginTop: "2.2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
                     <div className="compare-area" style={{ width: "100%", display: "flex", justifyContent: "center", position: "relative" }}>
                         <div className="compare-stage" style={{ maxWidth: 900, width: "100%", position: "relative" }}>
-                            {compare ? (
+                            {compare && compare.compressedBlob ? (
                                 <>
                                     <CompareObject compare={compare} />
                                     <div className="quality-dock">

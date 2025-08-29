@@ -97,7 +97,8 @@ header {
 .upload-area:hover:not(.drag) {
     border-color: var(--accent);
     background: radial-gradient(circle at 30% 40%, rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.02) 70%);
-    box-shadow: 0 0 0 2px rgba(78, 161, 255, 0.35), 0 4px 14px -4px rgba(0, 0, 0, 0.15);
+    /* 去除实线环形高亮，保持虚线边框视觉 */
+    box-shadow: none;
     transform: none;
 }
 .images-list {
@@ -520,7 +521,8 @@ button.danger:hover:not(:disabled) {
 }
 :root[data-theme="light"] .upload-area:hover:not(.drag) {
     background: radial-gradient(circle at 30% 40%, #f9fcff, #e9f2fa 75%);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent), 0 6px 18px -6px rgba(0, 0, 0, 0.18);
+    /* 仍保持虚线，不添加外描边 box-shadow */
+    box-shadow: none;
 }
 :root[data-theme="light"] .upload-area.drag {
     background: radial-gradient(circle at 30% 40%, #f1f8ff, #e4eef7 75%);

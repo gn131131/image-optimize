@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import UploadArea from "./components/UploadArea";
-import ImageItem from "./components/ImageItem";
+// import ImageItem from "./components/ImageItem"; // legacy list view
+import ThumbCarousel from "./components/ThumbCarousel";
 import QualityPanel from "./components/QualityPanel";
 import { QueueItem } from "./types";
 import { formatBytes } from "./utils/compress";
@@ -86,26 +87,7 @@ const App: React.FC = () => {
                         </span>
                     )}
                 </div>
-                <div className="images-list grid" style={{ marginTop: "1rem" }}>
-                    {items.map((it) => (
-                        <ImageItem
-                            key={it.id}
-                            item={it}
-                            selected={compare?.id === it.id}
-                            batching={batching}
-                            onSelect={(item) => setCompare(item)}
-                            onRemove={wrappedRemove}
-                            onDownload={downloadSingle}
-                            onRetry={(item) => {
-                                setItems((prev) => prev.map((p) => (p.id === item.id ? { ...p, status: "pending", error: undefined } : p)));
-                                // processedRef handled inside hook, just reset status
-                            }}
-                            onCancelChunk={cancelChunk}
-                            onResumeChunk={resumeChunk}
-                        />
-                    ))}
-                    {/* 空列表时不再显示下方第二拖拽提示，避免视觉重复 */}
-                </div>
+                <ThumbCarousel items={items} selectedId={compare?.id} onSelect={(it) => setCompare(it)} onRemove={wrappedRemove} />
                 <div style={{ marginTop: "2.2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
                     <div className="compare-area" style={{ width: "100%", display: "flex", justifyContent: "center", position: "relative" }}>
                         <div className="compare-stage" style={{ maxWidth: 900, width: "100%", position: "relative" }}>

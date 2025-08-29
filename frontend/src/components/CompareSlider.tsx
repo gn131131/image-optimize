@@ -17,7 +17,6 @@ const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
     useEffect(() => {
         setPos(50);
         setPan({ x: 0, y: 0 });
-        setScale(1);
         setNat(null);
         if (original) {
             const img = new Image();
@@ -25,6 +24,21 @@ const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
             img.src = original;
         }
     }, [original, compressed]);
+
+    // 初始化 / 尺寸变化时保证最小 cover 缩放
+    useEffect(() => {
+        if (!nat || !ref.current) return;
+        const applyMinCover = () => {
+            const rect = ref.current!.getBoundingClientRect();
+            const minCover = Math.max(rect.width / nat.w, rect.height / nat.h);
+            setScale((s) => (s < minCover ? minCover : s));
+            // 如果当前 pan 造成边缘露出，重置到 0
+            setPan((p) => ({ x: Math.min(0, p.x), y: Math.min(0, p.y) }));
+        };
+        applyMinCover();
+        window.addEventListener("resize", applyMinCover);
+        return () => window.removeEventListener("resize", applyMinCover);
+    }, [nat]);
     const calcAndSet = useCallback((clientX: number) => {
         if (!ref.current) return;
         const rect = ref.current.getBoundingClientRect();
@@ -102,8 +116,11 @@ const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
         } catch {}
     };
     const onDoubleClick = () => {
+        if (!nat || !ref.current) return;
+        const rect = ref.current.getBoundingClientRect();
+        const minCover = Math.max(rect.width / nat.w, rect.height / nat.h);
+        setScale(minCover);
         setPan({ x: 0, y: 0 });
-        setScale(1);
     };
 
     // 统一的滚轮缩放函数（保持指针位置稳定）
@@ -115,7 +132,8 @@ const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
             const cy = clientY - rect.top;
             const zoomFactor = deltaY > 0 ? 0.9 : 1.1;
             let newScale = scale * zoomFactor;
-            newScale = Math.min(8, Math.max(0.1, newScale));
+            const minCover = Math.max(rect.width / nat.w, rect.height / nat.h);
+            newScale = Math.min(8, Math.max(minCover, newScale));
             if (newScale === scale) return;
             const nx = cx - (cx - pan.x) * (newScale / scale);
             const ny = cy - (cy - pan.y) * (newScale / scale);
@@ -178,6 +196,7 @@ const CompareSlider: React.FC<Props> = ({ original, compressed }) => {
                 </div>
             </div>
             <div className="slider" aria-hidden>
+                <div className="slider-bar" style={{ left: pos + "%", transform: "translateX(-50%)" }} />
                 <div
                     className="slider-handle"
                     style={{ left: pos + "%" }}

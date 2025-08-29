@@ -296,7 +296,6 @@ input[type="range"] {
     position: relative;
     width: max-content;
     height: max-content;
-    transition: transform 0.22s cubic-bezier(0.33, 0.03, 0.21, 1);
 }
 .compare-pan-root {
     overscroll-behavior: contain;

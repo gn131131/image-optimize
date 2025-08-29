@@ -71,6 +71,13 @@ header {
     gap: 0.9rem;
     grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
 }
+.file-info-panel {
+    background: linear-gradient(135deg, var(--bg-panel-alt), var(--bg-panel));
+    padding: 0.6rem 0.9rem;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+}
 /* --- Thumbnail Carousel --- */
 .thumb-carousel {
     position: relative;
@@ -110,7 +117,7 @@ header {
     overflow: hidden;
 }
 .thumb-card.selected {
-    box-shadow: 0 0 0 2px var(--accent), 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent), 0 4px 10px -4px rgba(0, 0, 0, 0.6);
 }
 .thumb-card img {
     width: 100%;
@@ -126,23 +133,19 @@ header {
 .thumb-ratio-fade {
     position: absolute;
     inset: 0;
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.55));
+    background: rgba(0, 0, 0, 0.35);
     color: #fff;
-    font-size: 0.7rem;
+    font-size: 0.9rem;
+    font-weight: 600;
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 0.85;
+    letter-spacing: 0.5px;
     pointer-events: none;
 }
-.thumb-ratio-fade .ratio.down {
-    color: #4caf50;
-}
-.thumb-ratio-fade .ratio.up {
-    color: #ffb347;
-}
-.thumb-ratio-fade .ratio.neutral {
-    color: #b0bac5;
+.thumb-ratio-fade .ratio.plain {
+    color: #fff;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.55);
 }
 .thumb-actions {
     position: absolute;
@@ -195,39 +198,47 @@ header {
     opacity: 0.35;
     cursor: not-allowed;
 }
-.thumb-progress-bar {
-    position: absolute;
-    left: 6px;
-    right: 6px;
-    bottom: 6px;
-    height: 6px;
-    background: rgba(0, 0, 0, 0.4);
-    border-radius: 4px;
-    overflow: hidden;
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
-}
-.thumb-progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #1d6fd9, #3d8bff);
-    transition: width 0.25s;
-}
-.thumb-progress-text {
-    position: absolute;
-    bottom: 14px;
-    right: 8px;
-    font-size: 0.55rem;
-    background: rgba(0, 0, 0, 0.55);
-    padding: 2px 5px;
-    border-radius: 6px;
-    color: #fff;
-    backdrop-filter: blur(3px);
-}
 .thumb-overlay-progress {
     position: absolute;
     inset: 0;
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: center;
+}
+.thumb-overlay-progress.ring {
+    background: rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(2px);
+}
+.ring-svg {
+    width: 60px;
+    height: 60px;
+}
+.ring-bg {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.15);
+    stroke-width: 5;
+}
+.ring-fg {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 5;
+    stroke-linecap: round;
+    transform: rotate(-90deg);
+    transform-origin: 50% 50%;
+    transition: stroke-dasharray 0.3s ease;
+}
+.ring-text {
+    position: absolute;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: #fff;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+.thumb-progress-bar,
+.thumb-progress-fill,
+.thumb-progress-text {
+    display: none;
 }
 .thumb-error {
     position: absolute;
@@ -244,10 +255,10 @@ header {
 .thumb-focus-ring {
     position: absolute;
     inset: 0;
-    border: 2px solid var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
     border-radius: inherit;
     pointer-events: none;
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent);
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5) inset, 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 @media (max-width: 680px) {
     .thumb-card {

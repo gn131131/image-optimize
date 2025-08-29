@@ -88,6 +88,16 @@ const App: React.FC = () => {
                     )}
                 </div>
                 <ThumbCarousel items={items} selectedId={compare?.id} onSelect={(it) => setCompare(it)} onRemove={wrappedRemove} />
+                {compare && (
+                    <div className="file-info-panel" style={{ marginTop: ".75rem", display: "flex", flexWrap: "wrap", gap: "1.2rem", fontSize: ".75rem", alignItems: "center" }}>
+                        <span style={{ fontWeight: 600, maxWidth: "40ch", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={compare.file.name}>
+                            文件: {compare.file.name}
+                        </span>
+                        <span>原始: {formatBytes(compare.originalSize)}</span>
+                        <span>压缩后: {compare.compressedSize ? formatBytes(compare.compressedSize) : compare.status === "done" ? "—" : "处理中..."}</span>
+                        {compare.compressedSize && <span>比例: {((compare.compressedSize / compare.originalSize) * 100).toFixed(1)}%</span>}
+                    </div>
+                )}
                 <div style={{ marginTop: "2.2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
                     <div className="compare-area" style={{ width: "100%", display: "flex", justifyContent: "center", position: "relative" }}>
                         <div className="compare-stage" style={{ maxWidth: 900, width: "100%", position: "relative" }}>

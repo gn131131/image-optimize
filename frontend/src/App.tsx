@@ -101,28 +101,14 @@ const App: React.FC = () => {
                                 合计原始: {formatBytes(items.reduce((a, b) => a + b.originalSize, 0))} / 压缩后: {formatBytes(items.reduce((a, b) => a + (b.compressedSize || 0), 0))}
                             </span>
                             {selectedItem && selectedItem.status === "done" && (
-                                <span
-                                    style={{
-                                        marginLeft: "1.75rem",
-                                        fontSize: ".72rem",
-                                        opacity: 0.82,
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        gap: "0.55rem",
-                                        whiteSpace: "nowrap",
-                                        maxWidth: "100%",
-                                        overflow: "hidden"
-                                    }}
-                                >
-                                    <span style={{ maxWidth: "32ch", overflow: "hidden", textOverflow: "ellipsis" }} title={selectedItem.file.name}>
-                                        {selectedItem.file.name}
-                                    </span>
+                                <span className="selected-file-pill" title={selectedItem.file.name}>
+                                    <span className="sfp-name">{selectedItem.file.name}</span>
                                     {selectedItem.compressedSize && (
                                         <>
-                                            <span>{formatBytes(selectedItem.originalSize)}</span>
-                                            <span style={{ opacity: 0.55 }}>→</span>
-                                            <span>{formatBytes(selectedItem.compressedSize)}</span>
-                                            <span style={{ opacity: 0.65 }}>{((selectedItem.compressedSize / selectedItem.originalSize) * 100).toFixed(1)}%</span>
+                                            <span className="sfp-size">{formatBytes(selectedItem.originalSize)}</span>
+                                            <span className="sfp-arrow">→</span>
+                                            <span className="sfp-size">{formatBytes(selectedItem.compressedSize)}</span>
+                                            <span className="sfp-ratio">{((selectedItem.compressedSize / selectedItem.originalSize) * 100).toFixed(1)}%</span>
                                         </>
                                     )}
                                 </span>

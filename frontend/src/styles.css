@@ -130,12 +130,7 @@ header {
     background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%);
     opacity: 0.55;
 }
-.thumb-card.done.inactive .thumb-ratio-fade {
-    opacity: 0;
-}
-.thumb-card.done.inactive .thumb-ratio-fade.always {
-    opacity: 1;
-}
+/* 取消 inactive 时隐藏压缩比，始终显示 */
 .thumb-inactive-blur {
     position: absolute;
     inset: 0;
@@ -143,34 +138,53 @@ header {
     -webkit-backdrop-filter: blur(4px) brightness(0.85);
     background: rgba(0, 0, 0, 0.35);
     transition: opacity 0.25s;
-    pointer-events: none;
-    z-index: 12;
+    pointer-events: none; /* 不挡点击 */
+    z-index: 10;
 }
 .thumb-card.done:hover .thumb-inactive-blur {
     opacity: 0;
 }
+/* 顶角下载按钮（精简） */
 .thumb-center-download {
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.25s;
-}
-.thumb-card.done:hover .thumb-center-download {
-    opacity: 1;
-    visibility: visible;
-}
-.center-dl-btn {
-    padding: 0.45rem 0.6rem;
-    border-radius: 10px;
-    font-size: 0.8rem;
-    width: 38px;
-    height: 38px;
+    position: absolute;
+    top: 6px;
+    left: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: transform 0.25s, filter 0.25s, box-shadow 0.25s;
+    z-index: 30;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.18s;
+}
+.center-dl-btn {
+    padding: 0.32rem 0.5rem;
+    border-radius: 8px;
+    font-size: 0.7rem;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+    color: #fff;
+    border: 1px solid var(--accent-strong);
+    box-shadow: 0 2px 6px -2px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.15) inset;
+    pointer-events: auto;
+    transition: transform 0.18s, filter 0.18s, box-shadow 0.18s, background 0.25s;
 }
 .center-dl-btn:hover:not(:disabled) {
-    transform: scale(1.08);
+    transform: translateY(-2px) scale(1.05);
+    box-shadow: 0 4px 10px -4px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+}
+.thumb-card.done.inactive .center-dl-btn {
+    filter: brightness(0.85);
+    opacity: 0.85;
+}
+.thumb-card.done.inactive:hover .center-dl-btn {
+    filter: none;
+    opacity: 1;
 }
 .thumb-card img {
     width: 100%;
@@ -186,7 +200,7 @@ header {
 .thumb-ratio-fade {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.35);
+    background: rgba(0, 0, 0, 0.28);
     color: #fff;
     font-size: 0.9rem;
     font-weight: 600;
@@ -195,39 +209,83 @@ header {
     justify-content: center;
     letter-spacing: 0.5px;
     pointer-events: none;
+    z-index: 5; /* 低于 hover 叠层与进度/下载层 */
 }
 .thumb-ratio-fade .ratio.plain {
     color: #fff;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.55);
 }
 .thumb-ratio-fade.always {
-    background: rgba(0, 0, 0, 0.32);
+    background: rgba(0, 0, 0, 0.55);
+    inset: auto;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 2px 7px 3px;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    line-height: 1;
+    width: auto;
+    height: auto;
+    backdrop-filter: blur(4px) brightness(0.95);
+    box-shadow: 0 2px 6px -3px rgba(0, 0, 0, 0.6);
+    opacity: 1;
+    transition: opacity 0.18s;
+}
+.thumb-card:hover .thumb-ratio-fade.always,
+.thumb-card.selected .thumb-ratio-fade.always {
+    opacity: 0;
 }
 .thumb-actions {
     position: absolute;
-    inset: 0;
+    top: 4px;
+    right: 4px;
     display: flex;
     align-items: flex-start;
     justify-content: flex-end;
-    padding: 4px;
+    padding: 0;
     gap: 4px;
     opacity: 0;
     transition: opacity 0.25s;
-    z-index: 50; /* 最高层，保证不被蒙版遮住 */
+    z-index: 40; /* 高于下载层(20) 但不覆盖整卡片 */
+    pointer-events: none; /* 自身不拦截，按钮开启 */
 }
-.thumb-card:hover .thumb-actions {
+.thumb-actions button {
+    pointer-events: auto;
+}
+.thumb-card:hover .thumb-actions,
+.thumb-card.selected .thumb-actions {
     opacity: 1;
 }
-.icon-btn {
-    background: rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(4px);
+/* 统一两个角按钮样式与显隐 */
+.center-dl-btn,
+.thumb-actions button.icon-btn.danger {
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
     color: #fff;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    padding: 2px 6px;
-    border-radius: 6px;
-    font-size: 0.65rem;
-    line-height: 1;
-    cursor: pointer;
+    border: 1px solid var(--accent-strong);
+    box-shadow: 0 2px 6px -2px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.15) inset;
+    pointer-events: auto;
+    transition: transform 0.18s, filter 0.18s, box-shadow 0.18s, background 0.25s;
+    backdrop-filter: blur(4px) brightness(0.95);
+}
+.center-dl-btn:hover:not(:disabled),
+.thumb-actions button.icon-btn.danger:hover {
+    transform: translateY(-2px) scale(1.05);
+    box-shadow: 0 4px 10px -4px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+}
+/* 下载按钮显隐（hover 或激活显示） */
+.thumb-card:hover .thumb-center-download,
+.thumb-card.selected .thumb-center-download {
+    opacity: 1;
 }
 .icon-btn:hover {
     background: rgba(0, 0, 0, 0.75);
@@ -300,29 +358,7 @@ header {
 .ring-text.big {
     font-size: 0.9rem;
 }
-/* 中心放大下载按钮 */
-.thumb-center-download {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(145deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.55));
-    backdrop-filter: blur(2px);
-    z-index: 20;
-}
-.center-dl-btn {
-    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-    color: #fff;
-    border: 1px solid var(--accent-strong);
-    padding: 0.65rem 1.1rem;
-    font-size: 0.9rem;
-    border-radius: 12px;
-    box-shadow: 0 4px 14px -4px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.15) inset;
-}
-.center-dl-btn:hover:not(:disabled) {
-    filter: brightness(1.05);
-}
+/* 旧中心放大下载按钮块已移除 */
 /* 批量下载按钮徽章 */
 .with-badge {
     position: relative;
@@ -380,6 +416,49 @@ header {
     align-items: baseline;
     flex-wrap: wrap;
     gap: 0.65rem;
+}
+/* 文件信息 pill 圆角减小 */
+.selected-file-pill {
+    margin-left: 1.4rem;
+    background: linear-gradient(135deg, var(--bg-panel), var(--bg-panel-alt));
+    border: 1px solid var(--border-color-soft);
+    padding: 0.45rem 0.85rem;
+    border-radius: 10px; /* 进一步减小圆角 */
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-size: 0.7rem;
+    line-height: 1;
+    box-shadow: 0 2px 5px -2px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+    max-width: 60%;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.selected-file-pill .sfp-name {
+    font-weight: 600;
+    max-width: 30ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.selected-file-pill .sfp-size {
+    font-variant-numeric: tabular-nums;
+    opacity: 0.9;
+}
+.selected-file-pill .sfp-arrow {
+    opacity: 0.5;
+}
+.selected-file-pill .sfp-ratio {
+    opacity: 0.65;
+    font-variant-numeric: tabular-nums;
+}
+/* 浅色主题文件信息视觉优化 */
+:root[data-theme="light"] .selected-file-pill {
+    background: linear-gradient(135deg, #fff, #f3f7fa);
+    border: 1px solid #d5dee5;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+}
+:root[data-theme="light"] .selected-file-pill .sfp-name {
+    color: #1c2730;
 }
 .fip-name {
     font-weight: 600;
@@ -904,33 +983,7 @@ button.danger:hover:not(:disabled) {
     }
 }
 
-/* 浅色模式滑轨更柔和 */
-:root[data-theme="light"] .quality-range-vertical::-webkit-slider-runnable-track {
-    background: linear-gradient(90deg, #dbe6ee, #cfd9e2);
-}
-:root[data-theme="light"] .quality-range-vertical::-moz-range-track {
-    background: linear-gradient(90deg, #dbe6ee, #cfd9e2);
-}
-
-/* 上传区域浅色优化 */
-:root[data-theme="light"] .upload-area {
-    background: radial-gradient(circle at 30% 40%, #ffffff, #eef3f7 75%);
-    border-color: var(--border-color-soft);
-}
-:root[data-theme="light"] .upload-area:hover:not(.drag) {
-    background: radial-gradient(circle at 30% 40%, #f9fcff, #e9f2fa 75%);
-    /* 仍保持虚线，不添加外描边 box-shadow */
-    box-shadow: none;
-}
-:root[data-theme="light"] .upload-area.drag {
-    background: radial-gradient(circle at 30% 40%, #f1f8ff, #e4eef7 75%);
-}
-
-/* 浅色主题下的缩略图边框、compare 背景细化 */
-:root[data-theme="light"] .thumb {
-    border-color: #cfd8e0;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-}
+/* （旧中心覆盖式下载按钮样式已移除） */
 :root[data-theme="light"] .compare-wrapper {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.06) inset;
 }
@@ -999,14 +1052,6 @@ button.danger:hover:not(:disabled) {
         transform: translateX(100%);
     }
 }
-@keyframes mini-slide {
-    0% {
-        transform: translateX(-100%);
-    }
-    100% {
-        transform: translateX(100%);
-    }
-}
 @keyframes pulse {
     0%,
     100% {
@@ -1016,6 +1061,22 @@ button.danger:hover:not(:disabled) {
     50% {
         transform: scale(1.1);
         opacity: 1;
+        /* 删除按钮加大 */
+        .thumb-actions button.icon-btn {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(4px);
+        }
+        .thumb-actions button.icon-btn:hover {
+            background: rgba(0, 0, 0, 0.7);
+        }
     }
 }
 .compare-wrapper::before {

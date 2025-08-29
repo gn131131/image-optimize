@@ -118,11 +118,23 @@ header {
     overflow: hidden;
 }
 .thumb-card.selected {
-    box-shadow: none;
     outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent), 0 0 0 1px var(--border-color) inset, 0 4px 10px -4px rgba(0, 0, 0, 0.6);
+    position: relative;
+}
+.thumb-card.selected::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%);
+    opacity: 0.55;
 }
 .thumb-card.done.inactive .thumb-ratio-fade {
     opacity: 0;
+}
+.thumb-card.done.inactive .thumb-ratio-fade.always {
+    opacity: 1;
 }
 .thumb-inactive-blur {
     position: absolute;
@@ -147,13 +159,18 @@ header {
     visibility: visible;
 }
 .center-dl-btn {
-    padding: 0.55rem 0.75rem;
+    padding: 0.45rem 0.6rem;
     border-radius: 10px;
-    font-size: 0.9rem;
-    width: 46px;
+    font-size: 0.8rem;
+    width: 38px;
+    height: 38px;
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: transform 0.25s, filter 0.25s, box-shadow 0.25s;
+}
+.center-dl-btn:hover:not(:disabled) {
+    transform: scale(1.08);
 }
 .thumb-card img {
     width: 100%;
@@ -182,6 +199,9 @@ header {
 .thumb-ratio-fade .ratio.plain {
     color: #fff;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.55);
+}
+.thumb-ratio-fade.always {
+    background: rgba(0, 0, 0, 0.32);
 }
 .thumb-actions {
     position: absolute;

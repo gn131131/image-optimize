@@ -186,13 +186,15 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
         };
     }, [serverUrl, items]);
 
-    // 下载阶段: 获取最终文件并标记完成
+    // 下载阶段: 获取最终文件并标记完成 (加 _fetched 防抖, 不改变 phase 类型)
     useEffect(() => {
-        const pending = items.filter((i) => i.phase === "download" && i.downloadUrl && !i.compressedBlob);
+        const pending = items.filter((i) => i.phase === "download" && i.downloadUrl && !i.compressedBlob && !(i as any)._fetched);
         if (!pending.length) return;
         pending.forEach(async (it) => {
             try {
-                const resp = await fetch(`${serverUrl}${it.downloadUrl}?t=${Date.now()}`);
+                (it as any)._fetched = true;
+                (it as any)._fetching = true;
+                const resp = await fetch(`${serverUrl}${it.downloadUrl}`);
                 if (!resp.ok) throw new Error("下载失败");
                 const blob = await resp.blob();
                 setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, compressedBlob: blob, status: "done", phase: "done", lastQuality: p.quality, progress: 1, compressionProgress: 1 } : p)));

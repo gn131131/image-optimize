@@ -98,10 +98,13 @@ const ThumbCarousel: React.FC<ThumbCarouselProps> = ({ items, selectedId, onSele
                             <div
                                 key={it.id}
                                 className={classNames.join(" ")}
-                                onClick={() => onSelect(it)}
+                                onClick={() => {
+                                    if (done) onSelect(it);
+                                }}
                                 role="button"
                                 tabIndex={0}
                                 onKeyDown={(e) => {
+                                    if (!done) return;
                                     if (e.key === "Enter" || e.key === " ") {
                                         e.preventDefault();
                                         onSelect(it);
@@ -110,7 +113,7 @@ const ThumbCarousel: React.FC<ThumbCarouselProps> = ({ items, selectedId, onSele
                             >
                                 <div className="thumb-inner">
                                     <img src={it.originalDataUrl} alt={it.file.name} draggable={false} />
-                                    {done && <div className="thumb-ratio-fade">{renderRatio(it)}</div>}
+                                    {it.compressedSize && <div className="thumb-ratio-fade always">{renderRatio(it)}</div>}
                                     {renderProgressOverlay(it)}
                                     {done && !selected && <div className="thumb-inactive-blur" />}
                                     {it.compressedBlob && done && (

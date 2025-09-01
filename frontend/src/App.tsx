@@ -35,7 +35,20 @@ const App: React.FC = () => {
     };
     const applyQuality = () => {
         if (!selectedItem) return;
-        setItems((prev) => prev.map((p) => (p.id === selectedItem.id ? { ...p, recompressing: true } : p)));
+        // 标记重新压缩：保留旧 compressedBlob 供对比区显示，同时重置内部 _fetched 标志以便重新获取
+        setItems((prev) =>
+            prev.map((p) =>
+                p.id === selectedItem.id
+                    ? ({
+                          ...p,
+                          recompressing: true,
+                          // 清理可能遗留的内部标志（不会影响 TS，因为是动态属性）
+                          _fetched: false,
+                          _fetching: false
+                      } as any)
+                    : p
+            )
+        );
         const target = items.find((i) => i.id === selectedItem.id);
         if (target) sendSingleFile({ ...target, recompressing: true } as QueueItem, target.quality);
     };
@@ -123,7 +136,8 @@ const App: React.FC = () => {
                             }}
                             onRemove={wrappedRemove}
                         />
-                        {selectedItem && selectedItem.status === "done" && (
+                        {/* 显示条件：已有一次压缩结果(有 compressedBlob) 且未进入 error，即使正在重新压缩也保持可见 */}
+                        {selectedItem && selectedItem.compressedBlob && selectedItem.status !== "error" && (
                             <div style={{ marginTop: "2.2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem" }}>
                                 <div className="compare-area" style={{ width: "100%", display: "flex", justifyContent: "center", position: "relative" }}>
                                     <div className="compare-stage" style={{ maxWidth: 900, width: "100%", position: "relative" }}>

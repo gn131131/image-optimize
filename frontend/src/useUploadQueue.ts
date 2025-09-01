@@ -86,7 +86,27 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
     const activeUploadsRef = useRef(0);
     const sendSingleFile = useCallback(
         async (target: QueueItem, quality: number) => {
-            setItems((prev) => prev.map((i) => (i.id === target.id ? { ...i, status: "compressing", error: undefined, progress: 0, phase: "upload", compressionProgress: 0 } : i)));
+            console.log("[recompress:start]", { id: target.id, quality, prevStatus: target.status });
+            setItems((prev) => {
+                const next: QueueItem[] = prev.map(
+                    (i): QueueItem =>
+                        i.id === target.id
+                            ? ({
+                                  ...i,
+                                  status: "compressing",
+                                  error: undefined,
+                                  progress: 0,
+                                  compressionProgress: 0,
+                                  phase: "upload",
+                                  recompressing: i.compressedBlob ? true : i.recompressing,
+                                  _fetched: false,
+                                  _fetching: false
+                              } as any)
+                            : i
+                );
+                itemsRef.current = next;
+                return next;
+            });
             const ID_SEP = "__IDSEP__";
             const form = new FormData();
             form.append("files", target.file, `${target.id}${ID_SEP}${target.file.name}`);
@@ -103,8 +123,12 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
                         if (!e.lengthComputable) return;
                         const pct = e.total ? e.loaded / e.total : 0;
                         const enteredCompress = pct >= 1;
-                        setItems((prev) => prev.map((p) => (p.id === target.id ? { ...p, progress: pct, phase: enteredCompress ? "compress" : "upload" } : p)));
-                        // 进入 compress 阶段后由批量轮询更新 compressionProgress
+                        console.log("[upload:progress]", target.id, pct);
+                        setItems((prev) => {
+                            const next: QueueItem[] = prev.map((p): QueueItem => (p.id === target.id ? ({ ...p, progress: pct, phase: enteredCompress ? "compress" : "upload" } as QueueItem) : p));
+                            itemsRef.current = next;
+                            return next;
+                        });
                     };
                     xhr.onerror = () => reject(new Error("网络错误"));
                     xhr.onload = () => {
@@ -117,14 +141,27 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
                 if (!respJson || !respJson.items || !respJson.items.length) throw new Error("响应无结果");
                 const jobInfo = respJson.items.find((it: any) => it.id === target.id) || respJson.items[0];
                 if (!jobInfo || !jobInfo.jobId) throw new Error("缺少 jobId");
-                // 进入真实 compress 阶段（进度由批量轮询更新）
-                setItems((prev) => prev.map((i) => (i.id === target.id ? ({ ...i, phase: "compress", compressionProgress: 0, jobId: jobInfo.jobId } as any) : i)));
+                console.log("[job:assigned]", target.id, jobInfo.jobId);
+                setItems((prev) => {
+                    const next: QueueItem[] = prev.map((i): QueueItem => (i.id === target.id ? ({ ...i, phase: "compress", compressionProgress: 0, jobId: jobInfo.jobId } as QueueItem) : i));
+                    itemsRef.current = next;
+                    return next;
+                });
+                // 若轮询未启动则手动触发一次
+                if (!pollingIntervalRef.current) {
+                    const manualTick = () => {
+                        lastPollRef.current = 0; // 允许立刻轮询
+                    };
+                    manualTick();
+                }
             } catch (e: any) {
+                console.log("[upload:error]", target.id, e);
                 showMsg(e.message || "上传失败");
                 setItems((prev) => prev.map((i) => (i.id === target.id ? { ...i, status: "error", error: e.message, progress: undefined, phase: "error" } : i)));
             } finally {
                 activeUploadsRef.current--;
                 if (activeUploadsRef.current <= 0) setBatching(false);
+                console.log("[upload:done]", target.id);
             }
         },
         [serverUrl, showMsg]
@@ -149,23 +186,33 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
             try {
                 const ids = Array.from(new Set(activeJobs.map((j) => j.jobId!))).join(",");
                 if (!ids) return;
+                console.log("[poll] ids=", ids);
                 const resp = await fetch(`${serverUrl}/api/jobs?ids=${encodeURIComponent(ids)}`);
                 if (!resp.ok) return;
                 const data = await resp.json();
                 const list: any[] = data.items || [];
-                if (!list.length) return;
+                console.log("[poll:resp]", list);
                 setItems((prev) =>
                     prev.map((it) => {
                         if (!it.jobId) return it;
                         const rec = list.find((r) => r.jobId === it.jobId);
                         if (!rec) return it;
-                        if (rec.error) return { ...it, status: "error", error: mapError(rec.error), phase: "error", compressionProgress: 1, jobId: undefined };
+                        if (rec.error) return { ...it, status: "error", error: mapError(rec.error), phase: "error", compressionProgress: 1, jobId: undefined, recompressing: false };
                         const phase = rec.phase as string;
                         if (phase === "done" && rec.downloadUrl) {
-                            return { ...it, phase: "download", compressionProgress: 1, compressedSize: rec.compressedSize, downloadUrl: rec.downloadUrl, jobId: undefined };
+                            console.log("[job:done]", it.id, rec.downloadUrl);
+                            return {
+                                ...it,
+                                phase: "download",
+                                compressionProgress: 1,
+                                compressedSize: rec.compressedSize,
+                                downloadUrl: rec.downloadUrl,
+                                jobId: undefined
+                            };
                         }
                         const prog = typeof rec.progress === "number" ? rec.progress : phaseMap[phase] ?? 0;
-                        return { ...it, phase: "compress", compressionProgress: prog };
+                        console.log("[job:progress]", it.id, phase, prog);
+                        return { ...it, phase: phase === "finalizing" ? "compress" : "compress", compressionProgress: prog };
                     })
                 );
             } catch {}
@@ -186,20 +233,39 @@ export function useUploadQueue(showMsg: (m: string) => void): UseUploadQueueResu
         };
     }, [serverUrl, items]);
 
-    // 下载阶段: 获取最终文件并标记完成 (加 _fetched 防抖, 不改变 phase 类型)
+    // 下载阶段
     useEffect(() => {
-        const pending = items.filter((i) => i.phase === "download" && i.downloadUrl && !i.compressedBlob && !(i as any)._fetched);
+        // 之前条件包含 !i.compressedBlob，导致重新压缩(recompressing=true)时保留旧结果无法触发二次下载
+        // 调整为：只要进入 download 阶段且未标记 _fetched，就拉取新结果；允许已存在旧 compressedBlob (用于对比展示)
+        const pending = items.filter((i) => i.phase === "download" && i.downloadUrl && !(i as any)._fetched && (!i.compressedBlob || i.recompressing));
         if (!pending.length) return;
         pending.forEach(async (it) => {
+            console.log("[download:start]", it.id, it.downloadUrl);
             try {
                 (it as any)._fetched = true;
                 (it as any)._fetching = true;
                 const resp = await fetch(`${serverUrl}${it.downloadUrl}`);
                 if (!resp.ok) throw new Error("下载失败");
                 const blob = await resp.blob();
-                setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, compressedBlob: blob, status: "done", phase: "done", lastQuality: p.quality, progress: 1, compressionProgress: 1 } : p)));
+                console.log("[download:ok]", it.id, blob.size);
+                setItems((prev) =>
+                    prev.map((p) => {
+                        if (p.id !== it.id) return p;
+                        return {
+                            ...p,
+                            compressedBlob: blob,
+                            status: "done",
+                            phase: "done",
+                            lastQuality: p.quality,
+                            progress: 1,
+                            compressionProgress: 1,
+                            recompressing: false
+                        };
+                    })
+                );
             } catch (e: any) {
-                setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, status: "error", error: e.message, phase: "error" } : p)));
+                console.log("[download:error]", it.id, e);
+                setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, status: "error", error: e.message, phase: "error", recompressing: false } : p)));
             }
         });
     }, [items, serverUrl]);

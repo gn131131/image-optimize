@@ -209,7 +209,7 @@ header {
     justify-content: center;
     letter-spacing: 0.5px;
     pointer-events: none;
-    z-index: 5; /* 低于 hover 叠层与进度/下载层 */
+    z-index: 50; /* 提升到最上层，覆盖按钮出现前状态 */
 }
 .thumb-ratio-fade .ratio.plain {
     color: #fff;
@@ -218,7 +218,7 @@ header {
 .thumb-ratio-fade.always {
     inset: 0;
     background: rgba(0, 0, 0, 0.28);
-    font-size: 1.4rem;
+    font-size: 1.5rem;
     font-weight: 700;
     letter-spacing: 1px;
     opacity: 1;
@@ -270,9 +270,25 @@ header {
     transition: transform 0.18s, filter 0.18s, box-shadow 0.18s, background 0.25s;
     backdrop-filter: blur(4px) brightness(0.95);
 }
+/* 删除按钮线框红色（与下载风格统一：描边 + 透明背景轻微模糊） */
 .thumb-actions button.icon-btn.danger {
-    background: linear-gradient(135deg, #c63f33, #932a22);
-    border-color: #932a22;
+    background: linear-gradient(135deg, #e05346, #b1362b);
+    border: 1px solid #b1362b;
+    color: #ffffff;
+    box-shadow: 0 2px 6px -2px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.12) inset;
+}
+.thumb-actions button.icon-btn.danger:hover {
+    background: linear-gradient(135deg, #f06052, #c53d30);
+}
+/* 删除图标描边强化 */
+.thumb-actions button.icon-btn.danger svg {
+    stroke-width: 2.2;
+    stroke: #fff;
+    vector-effect: non-scaling-stroke;
+}
+.thumb-actions button.icon-btn.danger:hover svg {
+    stroke: #fff;
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.65));
 }
 .center-dl-btn:hover:not(:disabled),
 .thumb-actions button.icon-btn.danger:hover {
@@ -1170,4 +1186,36 @@ button.danger:hover:not(:disabled) {
 }
 :root[data-theme="dark"] .image-item.selected .file-name {
     color: #ffffff;
+}
+
+/* === Light 模式删除按钮 hover 变白导致图标消失修复 ===
+   原因：通用的 :root[data-theme="light"] button:hover 覆盖了前面定义的 .thumb-actions button.icon-btn.danger:hover
+   解决：提高选择器优先级并放在文件靠后位置，强制保留红色渐变；同时提供 hover 强化版本。 */
+:root[data-theme="light"] .thumb-actions button.icon-btn.danger {
+    background: linear-gradient(135deg, #e05346, #b1362b) !important; /* 强制保持红色底 */
+    border-color: #b1362b;
+    color: #fff;
+}
+:root[data-theme="light"] .thumb-actions button.icon-btn.danger:hover {
+    background: linear-gradient(135deg, #f06052, #c53d30) !important;
+    box-shadow: 0 4px 10px -4px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+}
+:root[data-theme="light"] .thumb-actions button.icon-btn.danger svg {
+    stroke: #fff;
+    filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.45));
+}
+:root[data-theme="light"] .thumb-actions button.icon-btn.danger:hover svg {
+    stroke: #fff;
+    filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.55));
+}
+
+/* === 去除下载/删除按钮 hover 上下浮动与缩放动画 === */
+.center-dl-btn,
+.thumb-actions button.icon-btn.danger {
+    /* 去掉 transform 动画意图 */
+    transition: filter 0.18s, box-shadow 0.18s, background 0.25s, border-color 0.25s;
+}
+.center-dl-btn:hover:not(:disabled),
+.thumb-actions button.icon-btn.danger:hover {
+    transform: none !important;
 }

@@ -216,21 +216,14 @@ header {
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.55);
 }
 .thumb-ratio-fade.always {
-    background: rgba(0, 0, 0, 0.55);
-    inset: auto;
-    top: 6px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 2px 7px 3px;
-    border-radius: 6px;
-    font-size: 0.7rem;
-    line-height: 1;
-    width: auto;
-    height: auto;
-    backdrop-filter: blur(4px) brightness(0.95);
-    box-shadow: 0 2px 6px -3px rgba(0, 0, 0, 0.6);
+    inset: 0;
+    background: rgba(0, 0, 0, 0.28);
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: 1px;
     opacity: 1;
     transition: opacity 0.18s;
+    text-shadow: 0 3px 10px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.25);
 }
 .thumb-card:hover .thumb-ratio-fade.always,
 .thumb-card.selected .thumb-ratio-fade.always {
@@ -276,6 +269,10 @@ header {
     pointer-events: auto;
     transition: transform 0.18s, filter 0.18s, box-shadow 0.18s, background 0.25s;
     backdrop-filter: blur(4px) brightness(0.95);
+}
+.thumb-actions button.icon-btn.danger {
+    background: linear-gradient(135deg, #c63f33, #932a22);
+    border-color: #932a22;
 }
 .center-dl-btn:hover:not(:disabled),
 .thumb-actions button.icon-btn.danger:hover {

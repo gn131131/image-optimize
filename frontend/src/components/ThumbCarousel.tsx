@@ -124,8 +124,8 @@ const ThumbCarousel: React.FC<ThumbCarouselProps> = ({ items, selectedId, onSele
                                         </div>
                                     )}
                                     <div className="thumb-actions" onClick={(e) => e.stopPropagation()}>
-                                        <button className="icon-btn danger" title="删除" onClick={() => onRemove(it.id)}>
-                                            ✕
+                                        <button className="icon-btn danger" title="删除" aria-label="删除" onClick={() => onRemove(it.id)}>
+                                            🗑️
                                         </button>
                                     </div>
                                     {it.status === "error" && <div className="thumb-error">失败</div>}

@@ -211,6 +211,10 @@ docker build -f Dockerfile.frontend -t image-opt-frontend:dev .
 - 分块/流式上传与结果异步轮询
 - 结果持久化 + CDN 缓存
 
+## 最近清理
+
+- 删除不再使用的前端遗留组件 `src/components/ImageItem.tsx`（在 `App.tsx` 中已被注释为 legacy list view，仓库内无其他引用）。如需恢复可从版本控制回滚该文件。
+
 ## 代码结构
 
 frontend/
